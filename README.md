@@ -47,6 +47,8 @@ In the Developer Portal → **Installation**:
 
 The bot needs **Guild Messages** (configured in code). Message Content intent is **not** required for coin rewards.
 
+Ensure the bot role can **View Channel** and **Read Message History** in channels where users chat — without these, Discord will not send message events to the bot.
+
 ## Local Development
 
 ```bash

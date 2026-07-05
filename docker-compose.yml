@@ -20,6 +20,7 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/andbot
+      ACTIVITY_DEBUG: ${ACTIVITY_DEBUG:-}
     depends_on:
       postgres:
         condition: service_healthy
