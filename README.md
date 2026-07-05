@@ -38,7 +38,14 @@ Built with **Bun**, **discord.js**, **Drizzle ORM**, and **PostgreSQL**.
 4. Under **OAuth2 → URL Generator**, select `bot` and `applications.commands` scopes
 5. Invite the bot to your server
 
-No privileged intents are required (slash commands + buttons only).
+### Bot installation (required for message rewards)
+
+In the Developer Portal → **Installation**:
+
+- Under **Guild Install**, enable the **`bot`** scope (not just `applications.commands`)
+- Re-invite the bot if it was added with slash commands only
+
+The bot needs **Guild Messages** (configured in code). Message Content intent is **not** required for coin rewards.
 
 ## Local Development
 

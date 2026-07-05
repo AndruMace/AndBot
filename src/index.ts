@@ -18,8 +18,16 @@ registerInteractionHandler(client, db, config);
 registerActivityHandler(client, wallet, config);
 let lotteryScheduler: ReturnType<typeof setInterval> | undefined;
 
-client.once("clientReady", () => {
+client.once("clientReady", async () => {
   console.log(`Logged in as ${client.user?.tag}`);
+  console.log(
+    `Activity rewards: ${config.MESSAGE_REWARD_AMOUNT} ${config.CURRENCY_NAME} per message (${config.MESSAGE_REWARD_COOLDOWN_MS / 1000}s cooldown)`,
+  );
+
+  await Promise.allSettled(
+    [...client.guilds.cache.values()].map((guild) => guild.channels.fetch()),
+  );
+
   lotteryScheduler = startLotteryScheduler(client, lottery, config);
 });
 
