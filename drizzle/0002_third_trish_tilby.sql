@@ -1,0 +1,1 @@
+ALTER TABLE "wallets" ADD COLUMN "last_wager" bigint;
