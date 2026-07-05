@@ -14,15 +14,6 @@ function addPvpChallengeOptions(
     )
     .addIntegerOption((opt) =>
       opt.setName("amount").setDescription("Wager amount").setRequired(true).setMinValue(1),
-    )
-    .addStringOption((opt) =>
-      opt
-        .setName("match")
-        .setDescription("Single game or best 2 of 3")
-        .addChoices(
-          { name: "Single game", value: "single" },
-          { name: "Best 2 of 3", value: "best_of_3" },
-        ),
     );
 
   if (opts?.includeSide) {
@@ -37,6 +28,16 @@ function addPvpChallengeOptions(
         ),
     );
   }
+
+  sub.addStringOption((opt) =>
+    opt
+      .setName("match")
+      .setDescription("Single game or best 2 of 3")
+      .addChoices(
+        { name: "Single game", value: "single" },
+        { name: "Best 2 of 3", value: "best_of_3" },
+      ),
+  );
 
   return sub;
 }
