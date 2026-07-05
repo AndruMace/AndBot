@@ -1,7 +1,45 @@
 import {
   SlashCommandBuilder,
   PermissionFlagsBits,
+  type SlashCommandSubcommandBuilder,
 } from "discord.js";
+
+function addPvpChallengeOptions(
+  sub: SlashCommandSubcommandBuilder,
+  opts?: { includeSide?: boolean },
+) {
+  sub
+    .addUserOption((opt) =>
+      opt.setName("user").setDescription("Opponent").setRequired(true),
+    )
+    .addIntegerOption((opt) =>
+      opt.setName("amount").setDescription("Wager amount").setRequired(true).setMinValue(1),
+    )
+    .addStringOption((opt) =>
+      opt
+        .setName("match")
+        .setDescription("Single game or best 2 of 3")
+        .addChoices(
+          { name: "Single game", value: "single" },
+          { name: "Best 2 of 3", value: "best_of_3" },
+        ),
+    );
+
+  if (opts?.includeSide) {
+    sub.addStringOption((opt) =>
+      opt
+        .setName("side")
+        .setDescription("Heads or tails")
+        .setRequired(true)
+        .addChoices(
+          { name: "Heads", value: "heads" },
+          { name: "Tails", value: "tails" },
+        ),
+    );
+  }
+
+  return sub;
+}
 
 export const commands = [
   new SlashCommandBuilder()
@@ -86,29 +124,34 @@ export const commands = [
     .setName("rps")
     .setDescription("Challenge another player to Rock Paper Scissors")
     .addSubcommand((sub) =>
-      sub
-        .setName("challenge")
-        .setDescription("Challenge a player")
-        .addUserOption((opt) =>
-          opt.setName("user").setDescription("Opponent").setRequired(true),
-        )
-        .addIntegerOption((opt) =>
-          opt.setName("amount").setDescription("Wager amount").setRequired(true).setMinValue(1),
-        ),
+      addPvpChallengeOptions(
+        sub.setName("challenge").setDescription("Challenge a player"),
+      ),
     ),
   new SlashCommandBuilder()
     .setName("dice")
-    .setDescription("Challenge another player to a dice duel")
+    .setDescription("Challenge another player to a 2-dice duel")
     .addSubcommand((sub) =>
-      sub
-        .setName("challenge")
-        .setDescription("Challenge a player")
-        .addUserOption((opt) =>
-          opt.setName("user").setDescription("Opponent").setRequired(true),
-        )
-        .addIntegerOption((opt) =>
-          opt.setName("amount").setDescription("Wager amount").setRequired(true).setMinValue(1),
-        ),
+      addPvpChallengeOptions(
+        sub.setName("challenge").setDescription("Challenge a player"),
+      ),
+    ),
+  new SlashCommandBuilder()
+    .setName("roulette")
+    .setDescription("Challenge another player to Russian Roulette")
+    .addSubcommand((sub) =>
+      addPvpChallengeOptions(
+        sub.setName("challenge").setDescription("Challenge a player"),
+      ),
+    ),
+  new SlashCommandBuilder()
+    .setName("coinflipduel")
+    .setDescription("Challenge another player to a coinflip duel")
+    .addSubcommand((sub) =>
+      addPvpChallengeOptions(
+        sub.setName("challenge").setDescription("Challenge a player"),
+        { includeSide: true },
+      ),
     ),
   new SlashCommandBuilder()
     .setName("give")

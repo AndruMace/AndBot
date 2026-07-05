@@ -1,9 +1,15 @@
 import { eq, and, or } from "drizzle-orm";
 import type { Database } from "../../db/client";
-import { pvpChallenges, type PvpChallenge } from "../../db/schema";
+import {
+  pvpChallenges,
+  type PvpChallenge,
+  type PvpGameType,
+  type PvpMatchFormat,
+} from "../../db/schema";
 import type { Config } from "../../config";
 import type { WalletService } from "../wallet";
 import { addMinutes, isExpired } from "../../utils/time";
+import { initRoulette } from "./engine";
 
 export class PvpChallengeError extends Error {
   constructor(message: string) {
@@ -11,6 +17,11 @@ export class PvpChallengeError extends Error {
     this.name = "PvpChallengeError";
   }
 }
+
+export type CreateChallengeOptions = {
+  matchFormat?: PvpMatchFormat;
+  challengerChoice?: string;
+};
 
 export class PvpChallengeService {
   constructor(
@@ -24,12 +35,15 @@ export class PvpChallengeService {
     channelId: string,
     challengerId: string,
     opponentId: string,
-    gameType: "rps" | "dice",
+    gameType: PvpGameType,
     wager: number,
+    options: CreateChallengeOptions = {},
   ): Promise<PvpChallenge> {
     if (challengerId === opponentId) {
       throw new PvpChallengeError("You cannot challenge yourself.");
     }
+
+    const matchFormat = options.matchFormat ?? "single";
 
     const existing = await this.db
       .select()
@@ -63,6 +77,11 @@ export class PvpChallengeService {
       throw new PvpChallengeError("You don't have enough funds for this wager.");
     }
 
+    const metadata =
+      gameType === "russian_roulette"
+        ? { roulette: initRoulette(challengerId) }
+        : null;
+
     const [challenge] = await this.db
       .insert(pvpChallenges)
       .values({
@@ -71,7 +90,10 @@ export class PvpChallengeService {
         challengerId,
         opponentId,
         gameType,
+        matchFormat,
         wager,
+        challengerChoice: options.challengerChoice ?? null,
+        metadata,
         expiresAt: addMinutes(this.config.CHALLENGE_EXPIRY_MINUTES),
       })
       .returning();
@@ -216,31 +238,17 @@ export function createPvpChallengeService(
   return new PvpChallengeService(db, wallet, config);
 }
 
-export type RpsChoice = "rock" | "paper" | "scissors";
-
-const RPS_BEATS: Record<RpsChoice, RpsChoice> = {
-  rock: "scissors",
-  paper: "rock",
-  scissors: "paper",
-};
-
-export function determineRpsWinner(
-  challengerChoice: RpsChoice,
-  opponentChoice: RpsChoice,
-): "challenger" | "opponent" | "tie" {
-  if (challengerChoice === opponentChoice) return "tie";
-  if (RPS_BEATS[challengerChoice] === opponentChoice) return "challenger";
-  return "opponent";
-}
-
-export function rollDice(): number {
-  return (crypto.getRandomValues(new Uint32Array(1))[0]! % 6) + 1;
-}
-
-export function determineDiceWinner(
-  challengerRoll: number,
-  opponentRoll: number,
-): "challenger" | "opponent" | "tie" {
-  if (challengerRoll === opponentRoll) return "tie";
-  return challengerRoll > opponentRoll ? "challenger" : "opponent";
-}
+export type { RpsChoice, CoinSide, RoundWinner } from "./engine";
+export {
+  determineRpsWinner,
+  determineDiceWinner,
+  rollDice,
+  rollTwoDice,
+  sumDice,
+  formatDiceRoll,
+  flipCoin,
+  determineCoinflipWinner,
+  oppositeSide,
+  pullRouletteTrigger,
+  parseMetadata,
+} from "./engine";

@@ -36,6 +36,13 @@
       "when": 1783215886078,
       "tag": "0004_skinny_legion",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1783220000000,
+      "tag": "0005_pvp_games",
+      "breakpoints": true
     }
   ]
 }

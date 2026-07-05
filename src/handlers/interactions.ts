@@ -11,9 +11,12 @@ import { handleCoinflip, handleBlackjack, handleBlackjackButton } from "../comma
 import {
   handleRpsChallenge,
   handleDiceChallenge,
+  handleRouletteChallenge,
+  handleCoinflipDuelChallenge,
   handlePvpAcceptDecline,
   handleRpsChoice,
   handleDiceRoll,
+  handleRoulettePull,
 } from "../commands/pvp";
 import { handleGive, handleTake } from "../commands/admin";
 import { handleLotteryBuy, handleLotteryStatus, handleLotteryDraw } from "../commands/lottery";
@@ -98,6 +101,16 @@ export function registerInteractionHandler(client: Client, db: Database, config:
           case "dice":
             if (interaction.options.getSubcommand() === "challenge") {
               await handleDiceChallenge(interaction, db, wallet, config);
+            }
+            break;
+          case "roulette":
+            if (interaction.options.getSubcommand() === "challenge") {
+              await handleRouletteChallenge(interaction, db, wallet, config);
+            }
+            break;
+          case "coinflipduel":
+            if (interaction.options.getSubcommand() === "challenge") {
+              await handleCoinflipDuelChallenge(interaction, db, wallet, config);
             }
             break;
           case "give":
@@ -253,6 +266,11 @@ export function registerInteractionHandler(client: Client, db: Database, config:
 
           if (action === "dice" && extra === "roll") {
             await handleDiceRoll(interaction, db, wallet, config, challengeId!);
+            return;
+          }
+
+          if (action === "roulette" && extra === "pull") {
+            await handleRoulettePull(interaction, db, wallet, config, challengeId!);
             return;
           }
         }

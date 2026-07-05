@@ -51,10 +51,13 @@ export async function handleHelp(
       {
         name: "PvP Games",
         value: [
-          "`/rps challenge user amount` — Rock Paper Scissors; winner takes the pot",
-          "`/dice challenge user amount` — Roll a d6; higher roll wins",
+          "`/rps challenge user amount [match]` — Rock Paper Scissors",
+          "`/dice challenge user amount [match]` — Roll 2 dice; higher total wins",
+          "`/roulette challenge user amount [match]` — Russian Roulette; take turns pulling the trigger",
+          "`/coinflipduel challenge user amount side [match]` — Coinflip duel; challenger picks a side",
+          "  • `match`: Single game (default) or Best 2 of 3",
           "  • Opponent accepts or declines via buttons",
-          "  • Ties refund both players",
+          "  • Ties in a single game refund both players; ties in best-of-3 replay the round",
           `  • Challenges expire after ${config.CHALLENGE_EXPIRY_MINUTES} minutes if not accepted`,
         ].join("\n"),
       },

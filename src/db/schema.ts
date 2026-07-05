@@ -55,7 +55,14 @@ export const minesSessionStatusEnum = pgEnum("mines_session_status", [
 
 export const lotteryRoundStatusEnum = pgEnum("lottery_round_status", ["open", "completed"]);
 
-export const pvpGameTypeEnum = pgEnum("pvp_game_type", ["rps", "dice"]);
+export const pvpGameTypeEnum = pgEnum("pvp_game_type", [
+  "rps",
+  "dice",
+  "russian_roulette",
+  "coinflip_duel",
+]);
+
+export const pvpMatchFormatEnum = pgEnum("pvp_match_format", ["single", "best_of_3"]);
 
 export const pvpChallengeStatusEnum = pgEnum("pvp_challenge_status", [
   "pending",
@@ -117,12 +124,17 @@ export const pvpChallenges = pgTable(
     challengerId: text("challenger_id").notNull(),
     opponentId: text("opponent_id").notNull(),
     gameType: pvpGameTypeEnum("game_type").notNull(),
+    matchFormat: pvpMatchFormatEnum("match_format").notNull().default("single"),
     wager: bigint("wager", { mode: "number" }).notNull(),
     status: pvpChallengeStatusEnum("status").notNull().default("pending"),
+    roundNumber: integer("round_number").notNull().default(1),
+    challengerScore: integer("challenger_score").notNull().default(0),
+    opponentScore: integer("opponent_score").notNull().default(0),
     challengerChoice: text("challenger_choice"),
     opponentChoice: text("opponent_choice"),
     challengerRoll: integer("challenger_roll"),
     opponentRoll: integer("opponent_roll"),
+    metadata: jsonb("metadata"),
     winnerId: text("winner_id"),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -236,6 +248,8 @@ export const lotteryTickets = pgTable(
 
 export type Wallet = typeof wallets.$inferSelect;
 export type PvpChallenge = typeof pvpChallenges.$inferSelect;
+export type PvpGameType = (typeof pvpGameTypeEnum.enumValues)[number];
+export type PvpMatchFormat = (typeof pvpMatchFormatEnum.enumValues)[number];
 export type BlackjackSession = typeof blackjackSessions.$inferSelect;
 export type MinesSession = typeof minesSessions.$inferSelect;
 export type LotteryRound = typeof lotteryRounds.$inferSelect;

@@ -17,8 +17,11 @@ Built with **Bun**, **discord.js**, **Drizzle ORM**, and **PostgreSQL**.
 - `/blackjack amount` — Interactive blackjack with Hit / Stand / Double buttons
 
 ### PvP Games
-- `/rps challenge user amount` — Rock Paper Scissors wager
-- `/dice challenge user amount` — Dice duel (roll d6, higher wins)
+- `/rps challenge user amount [match]` — Rock Paper Scissors wager
+- `/dice challenge user amount [match]` — 2-dice duel (higher total wins)
+- `/roulette challenge user amount [match]` — Russian Roulette; take turns pulling the trigger
+- `/coinflipduel challenge user amount side [match]` — Coinflip duel against another player
+- `match`: **Single game** (default) or **Best 2 of 3**
 
 ### Admin (Manage Server permission required)
 - `/give user amount [reason]` — Give currency
