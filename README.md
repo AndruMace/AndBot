@@ -78,7 +78,8 @@ bun run dev
 |----------|----------|---------|-------------|
 | `DISCORD_TOKEN` | Yes | — | Bot token |
 | `CLIENT_ID` | Yes | — | Application ID |
-| `DATABASE_URL` | Yes | — | Postgres connection string |
+| `POSTGRES_PASSWORD` | No | `postgres` | Postgres password (Docker Compose; keep in `.env` only) |
+| `DATABASE_URL` | Yes | — | Postgres connection string (local CLI; password must match `POSTGRES_PASSWORD`) |
 | `GUILD_ID` | No | — | Register commands to one guild (faster dev) |
 | `CURRENCY_NAME` | No | `coins` | Display name for currency |
 | `STARTING_BALANCE` | No | `0` | Balance for new wallets |
@@ -89,11 +90,14 @@ bun run dev
 | `CHALLENGE_EXPIRY_MINUTES` | No | `5` | PvP challenge timeout |
 | `BLACKJACK_SESSION_TIMEOUT_MINUTES` | No | `10` | Idle blackjack timeout |
 
-Local Postgres (via Docker Compose) runs on port **5434**:
+Local Postgres (via Docker Compose) runs on port **5434**. Set the password once in `.env` — never edit `docker-compose.yml`:
 
 ```
-DATABASE_URL=postgresql://postgres:postgres@localhost:5434/andbot
+POSTGRES_PASSWORD=your_local_password
+DATABASE_URL=postgresql://postgres:your_local_password@localhost:5434/andbot
 ```
+
+Changing `POSTGRES_PASSWORD` only affects a **new** database volume. To apply a new password to an existing local DB, run `docker compose down -v` first (destroys local data).
 
 ## Database
 
@@ -109,7 +113,7 @@ bun run db:migrate
 
 1. Provision an Ubuntu droplet (2 GB RAM recommended)
 2. Install Docker and Docker Compose
-3. Clone the repo and create `.env` with production values
+3. Clone the repo and create `.env` with production values (including `POSTGRES_PASSWORD` — do not edit `docker-compose.yml` on the server)
 4. Build and start:
 
 ```bash

@@ -21,6 +21,10 @@ const envSchema = z.object({
   DAILY_MAX_PAYOUT: z.coerce.number().int().positive().default(10_000),
   MESSAGE_REWARD_AMOUNT: z.coerce.number().int().positive().default(1),
   MESSAGE_REWARD_COOLDOWN_MS: z.coerce.number().int().positive().default(30_000),
+  ACTIVITY_DEBUG: z
+    .string()
+    .optional()
+    .transform((value) => value === "true"),
 });
 
 export type Config = z.infer<typeof envSchema>;

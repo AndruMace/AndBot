@@ -2,6 +2,9 @@ import { Events, type Client } from "discord.js";
 import type { Config } from "../config";
 import type { WalletService } from "./wallet";
 
+/** Bump when changing deploy diagnostics so logs confirm the running build. */
+export const ACTIVITY_HANDLER_VERSION = "gateway-raw-v2";
+
 type MessageCreatePayload = {
   id: string;
   guild_id?: string;
@@ -20,17 +23,16 @@ function isRewardablePayload(data: MessageCreatePayload): boolean {
   return true;
 }
 
-function activityDebugEnabled(): boolean {
-  return process.env.ACTIVITY_DEBUG === "true";
-}
-
 export function registerActivityHandler(
   client: Client,
   wallet: WalletService,
   config: Config,
 ) {
-  const debug = activityDebugEnabled();
+  const debug = config.ACTIVITY_DEBUG;
   let rawMessageCount = 0;
+  let loggedFirstGatewayMessage = false;
+
+  console.log(`Activity handler ${ACTIVITY_HANDLER_VERSION} registered`);
 
   if (debug) {
     console.log("ACTIVITY_DEBUG enabled — logging MESSAGE_CREATE packets");
@@ -40,6 +42,15 @@ export function registerActivityHandler(
     if (packet.t !== "MESSAGE_CREATE") return;
 
     const data = packet.d as MessageCreatePayload;
+
+    if (!loggedFirstGatewayMessage) {
+      loggedFirstGatewayMessage = true;
+      console.log("First MESSAGE_CREATE from Discord gateway", {
+        guildId: data.guild_id ?? null,
+        authorId: data.author?.id ?? null,
+      });
+    }
+
     if (debug && rawMessageCount < 5) {
       rawMessageCount++;
       console.log("MESSAGE_CREATE received", {
@@ -76,6 +87,8 @@ export function registerActivityHandler(
             ? `Activity reward +${config.MESSAGE_REWARD_AMOUNT} for ${data.author!.id} in ${data.guild_id}`
             : `Activity cooldown for ${data.author!.id} in ${data.guild_id}`,
         );
+      } else if (credited) {
+        console.log(`Activity reward +${config.MESSAGE_REWARD_AMOUNT} for ${data.author!.id}`);
       }
     } catch (err) {
       console.error("Activity reward error:", err);
