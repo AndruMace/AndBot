@@ -12,6 +12,8 @@ import type { Database } from "../../db/client";
 import type { WalletService } from "../../services/wallet";
 import type { BlackjackSessionService } from "../../services/blackjack/session";
 import type { MinesSessionService } from "../../services/casino/mines/session";
+import type { LotteryService } from "../../services/lottery/rounds";
+import { LotteryError, InsufficientFundsError as LotteryInsufficientFundsError } from "../../services/lottery/rounds";
 import { MinesSessionError } from "../../services/casino/mines/session";
 import { BlackjackSessionError } from "../../services/blackjack/session";
 import { playCoinflip, type CoinSide } from "../../services/coinflip";
@@ -20,6 +22,7 @@ import { assertGuild } from "../../utils/permissions";
 import { BetValidationError, formatCurrency } from "../../utils/bets";
 import { buildButtonId } from "../../utils/buttons";
 import { ephemeralOptions } from "../../utils/discord";
+import { formatDuration } from "../../utils/time";
 import { drawCard, resolveHiLo, type HiLoChoice } from "../../services/casino/hilo";
 import {
   MINES_COLUMNS,
@@ -29,6 +32,11 @@ import {
 } from "../../services/casino/mines/engine";
 import type { MinesSession } from "../../db/schema";
 import { CASINO_GAMES, type CasinoGame, parseWagerAmount, parseLuckyPick } from "./types";
+import {
+  getLotteryTicketPresets,
+  LOTTERY_MENU,
+  lotteryTicketDescription,
+} from "./lottery-menu";
 import {
   customLuckyNumberModal,
   customWagerModal,
@@ -47,11 +55,18 @@ import {
 } from "./wagers";
 
 function casinoEmbed(config: Config): EmbedBuilder {
-  const fields = CASINO_GAMES.map((g) => ({
-    name: `${g.emoji} ${g.label}`,
-    value: g.description,
-    inline: true,
-  }));
+  const fields = [
+    ...CASINO_GAMES.map((g) => ({
+      name: `${g.emoji} ${g.label}`,
+      value: g.description,
+      inline: true,
+    })),
+    {
+      name: `${LOTTERY_MENU.emoji} ${LOTTERY_MENU.label}`,
+      value: LOTTERY_MENU.description,
+      inline: true,
+    },
+  ];
 
   return new EmbedBuilder()
     .setColor(0x9b59b6)
@@ -64,17 +79,31 @@ function casinoEmbed(config: Config): EmbedBuilder {
 }
 
 function casinoGameRows(): ActionRowBuilder<ButtonBuilder>[] {
+  const menuItems = [
+    ...CASINO_GAMES.map((g) => ({ id: g.id, label: g.label, emoji: g.emoji, kind: "game" as const })),
+    {
+      id: LOTTERY_MENU.id,
+      label: LOTTERY_MENU.label,
+      emoji: LOTTERY_MENU.emoji,
+      kind: "lottery" as const,
+    },
+  ];
+
   const rows: ActionRowBuilder<ButtonBuilder>[] = [];
-  for (let i = 0; i < CASINO_GAMES.length; i += 4) {
-    const chunk = CASINO_GAMES.slice(i, i + 4);
+  for (let i = 0; i < menuItems.length; i += 4) {
+    const chunk = menuItems.slice(i, i + 4);
     rows.push(
       new ActionRowBuilder<ButtonBuilder>().addComponents(
-        ...chunk.map((g) =>
+        ...chunk.map((item) =>
           new ButtonBuilder()
-            .setCustomId(buildButtonId("casino", "pick", g.id))
-            .setLabel(g.label)
+            .setCustomId(
+              item.kind === "lottery"
+                ? buildButtonId("casino", "pick", "lottery")
+                : buildButtonId("casino", "pick", item.id),
+            )
+            .setLabel(item.label)
             .setStyle(ButtonStyle.Primary)
-            .setEmoji(g.emoji),
+            .setEmoji(item.emoji),
         ),
       ),
     );
@@ -165,6 +194,153 @@ export async function handleCasino(
   await interaction.reply({
     embeds: [casinoEmbed(config)],
     components: casinoGameRows(),
+  });
+}
+
+function lotteryTicketRows(config: Config, balance: number): ActionRowBuilder<ButtonBuilder>[] {
+  const presets = getLotteryTicketPresets(config, balance);
+  const rows: ActionRowBuilder<ButtonBuilder>[] = [];
+
+  if (presets.length > 0) {
+    rows.push(
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        ...presets.map((count) =>
+          new ButtonBuilder()
+            .setCustomId(buildButtonId("casino", "lot", "buy", String(count)))
+            .setLabel(`${count} ticket${count === 1 ? "" : "s"}`)
+            .setStyle(ButtonStyle.Primary),
+        ),
+      ),
+    );
+  }
+
+  rows.push(
+    new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setCustomId(buildButtonId("casino", "lot", "status"))
+        .setLabel("View Status")
+        .setStyle(ButtonStyle.Secondary)
+        .setEmoji("📊"),
+    ),
+  );
+
+  return rows;
+}
+
+export async function handleCasinoLotteryPick(
+  interaction: ButtonInteraction,
+  wallet: WalletService,
+  config: Config,
+) {
+  const guildId = assertGuild(interaction);
+  const userWallet = await wallet.getOrCreateWallet(guildId, interaction.user.id);
+
+  await interaction.reply({
+    ...ephemeralOptions({
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0xf1c40f)
+          .setTitle(`${LOTTERY_MENU.emoji} Lottery`)
+          .setDescription(lotteryTicketDescription(config, userWallet.balance))
+          .setFooter({
+            text: `${config.LOTTERY_RAKE_PERCENT}% house fee · Draw every ${config.LOTTERY_DRAW_INTERVAL_DAYS} days`,
+          }),
+      ],
+      components: lotteryTicketRows(config, userWallet.balance),
+    }),
+  });
+}
+
+function msUntilDraw(scheduledDrawAt: Date): number {
+  return Math.max(0, scheduledDrawAt.getTime() - Date.now());
+}
+
+export async function handleCasinoLotteryBuy(
+  interaction: ButtonInteraction,
+  count: number,
+  lottery: LotteryService,
+  config: Config,
+) {
+  const guildId = assertGuild(interaction);
+
+  try {
+    const { round, tickets, balance } = await lottery.buyTickets(
+      guildId,
+      interaction.user.id,
+      interaction.channelId,
+      count,
+    );
+
+    const ticketNumbers = tickets.map((t) => t.ticketNumber).join(", ");
+    const totalCost = count * config.LOTTERY_TICKET_PRICE;
+
+    await interaction.update({
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0xf1c40f)
+          .setTitle("Lottery Tickets Purchased")
+          .setDescription(
+            `You bought **${count}** ticket${count === 1 ? "" : "s"} for **${formatCurrency(totalCost, config)}**.\n` +
+              `Ticket number${count === 1 ? "" : "s"}: **${ticketNumbers}**\n` +
+              `Round **#${round.roundNumber}** · Pot: **${formatCurrency(round.potAmount, config)}** ` +
+              `(${round.ticketCount} tickets)\n` +
+              `Draw in **${formatDuration(msUntilDraw(round.scheduledDrawAt))}**\n` +
+              `Balance: **${formatCurrency(balance, config)}**`,
+          )
+          .setFooter({
+            text: `${config.LOTTERY_RAKE_PERCENT}% house fee · Draw every ${config.LOTTERY_DRAW_INTERVAL_DAYS} days`,
+          }),
+      ],
+      components: [],
+    });
+  } catch (err) {
+    if (err instanceof LotteryInsufficientFundsError || err instanceof LotteryError) {
+      await interaction.followUp(ephemeralOptions({ content: err.message }));
+      return;
+    }
+    throw err;
+  }
+}
+
+export async function handleCasinoLotteryStatus(
+  interaction: ButtonInteraction,
+  lottery: LotteryService,
+  config: Config,
+) {
+  const guildId = assertGuild(interaction);
+  const status = await lottery.getStatus(guildId, interaction.user.id);
+  const { round, userTicketCount, uniquePlayers, lastCompleted } = status;
+
+  const odds =
+    round.ticketCount > 0 && userTicketCount > 0
+      ? ((userTicketCount / round.ticketCount) * 100).toFixed(1)
+      : null;
+
+  let description =
+    `**Round #${round.roundNumber}**\n` +
+    `**Pot:** ${formatCurrency(round.potAmount, config)}\n` +
+    `**Tickets sold:** ${round.ticketCount} (${uniquePlayers} players)\n` +
+    `**Your tickets:** ${userTicketCount}` +
+    (odds ? ` (**${odds}%** chance if drawn now)` : "") +
+    `\n**Ticket price:** ${formatCurrency(config.LOTTERY_TICKET_PRICE, config)}\n` +
+    `**Draw in:** ${formatDuration(msUntilDraw(round.scheduledDrawAt))}`;
+
+  if (lastCompleted) {
+    description +=
+      `\n\n**Last winner:** <@${lastCompleted.winnerId}> won **${formatCurrency(lastCompleted.payoutAmount ?? 0, config)}** in round #${lastCompleted.roundNumber}.`;
+  }
+
+  await interaction.update({
+    embeds: [
+      new EmbedBuilder()
+        .setColor(0xf1c40f)
+        .setTitle("Lottery Status")
+        .setDescription(description)
+        .setFooter({
+          text: `${config.LOTTERY_RAKE_PERCENT}% house fee · Draw every ${config.LOTTERY_DRAW_INTERVAL_DAYS} days`,
+        }),
+    ],
+    components: [],
   });
 }
 

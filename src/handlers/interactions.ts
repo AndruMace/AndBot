@@ -36,9 +36,22 @@ import {
   handleCasinoMinesConfig,
   handleCasinoMinesReveal,
   handleCasinoMinesCashout,
+  handleCasinoLotteryPick,
+  handleCasinoLotteryBuy,
+  handleCasinoLotteryStatus,
   isCasinoGame,
 } from "../commands/casino";
-import type { CoinSide } from "../services/coinflip";
+import {
+  handleChallenge,
+  handleChallengePick,
+  handleChallengeUserSelect,
+  handleChallengeMatchSelect,
+  handleChallengeSideSelect,
+  handleChallengeWager,
+  isChallengeGame,
+} from "../commands/challenge";
+import type { PvpMatchFormat } from "../db/schema";
+import type { CoinSide } from "../services/pvp/challenges";
 import type { HiLoChoice } from "../services/casino/hilo";
 import { parseButtonId } from "../utils/buttons";
 import { replyInteractionError } from "../utils/interactionError";
@@ -87,6 +100,9 @@ export function registerInteractionHandler(client: Client, db: Database, config:
           case "casino":
             await handleCasino(interaction, config);
             break;
+          case "challenge":
+            await handleChallenge(interaction, config);
+            break;
           case "coinflip":
             await handleCoinflip(interaction, wallet, config);
             break;
@@ -123,13 +139,106 @@ export function registerInteractionHandler(client: Client, db: Database, config:
         return;
       }
 
+      if (interaction.isUserSelectMenu()) {
+        const challengeParts = parseButtonId(interaction.customId, "challenge");
+        if (challengeParts?.[0] === "user" && isChallengeGame(challengeParts[1]!)) {
+          await handleChallengeUserSelect(
+            interaction,
+            challengeParts[1]!,
+            wallet,
+            config,
+          );
+          return;
+        }
+      }
+
       if (interaction.isButton()) {
+        const challengeParts = parseButtonId(interaction.customId, "challenge");
+        if (challengeParts) {
+          const [action, sub, ...rest] = challengeParts;
+
+          if (action === "pick" && isChallengeGame(sub!)) {
+            await handleChallengePick(interaction, sub!);
+            return;
+          }
+
+          if (action === "match" && isChallengeGame(sub!) && rest[0] && rest[1]) {
+            await handleChallengeMatchSelect(
+              interaction,
+              sub!,
+              rest[0],
+              rest[1] as PvpMatchFormat,
+              wallet,
+              config,
+            );
+            return;
+          }
+
+          if (
+            action === "side" &&
+            isChallengeGame(sub!) &&
+            rest[0] &&
+            (rest[1] === "heads" || rest[1] === "tails")
+          ) {
+            await handleChallengeSideSelect(
+              interaction,
+              sub!,
+              rest[0],
+              rest[1] as CoinSide,
+              wallet,
+              config,
+            );
+            return;
+          }
+
+          if (
+            action === "bet" &&
+            isChallengeGame(sub!) &&
+            rest[0] &&
+            rest[1] &&
+            rest[2]
+          ) {
+            await handleChallengeWager(
+              interaction,
+              sub!,
+              rest[0],
+              rest[1],
+              rest[2] as PvpMatchFormat,
+              rest[3] ?? "-",
+              db,
+              wallet,
+              config,
+            );
+            return;
+          }
+        }
+
         const casinoParts = parseButtonId(interaction.customId, "casino");
         if (casinoParts) {
           const [action, sub, ...rest] = casinoParts;
 
+          if (action === "pick" && sub === "lottery") {
+            await handleCasinoLotteryPick(interaction, wallet, config);
+            return;
+          }
+
           if (action === "pick" && isCasinoGame(sub!)) {
             await handleCasinoPick(interaction, sub!, wallet, config);
+            return;
+          }
+
+          if (action === "lot" && sub === "buy" && rest[0]) {
+            await handleCasinoLotteryBuy(
+              interaction,
+              Number.parseInt(rest[0], 10),
+              lottery,
+              config,
+            );
+            return;
+          }
+
+          if (action === "lot" && sub === "status") {
+            await handleCasinoLotteryStatus(interaction, lottery, config);
             return;
           }
 

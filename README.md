@@ -1,6 +1,6 @@
 # AndBot
 
-Discord economy bot with virtual currency, house gambling (coinflip, blackjack), PvP wagering (rock-paper-scissors, dice duels), and admin tools.
+Discord economy bot with virtual currency, house casino games, guild lottery, PvP wagers, message activity rewards, and admin tools.
 
 Built with **Bun**, **discord.js**, **Drizzle ORM**, and **PostgreSQL**.
 
@@ -8,20 +8,40 @@ Built with **Bun**, **discord.js**, **Drizzle ORM**, and **PostgreSQL**.
 
 ### Economy
 - `/balance [user]` — Check wallet balance
-- `/daily` — Claim daily free currency (24h cooldown)
-- `/weekly` — Claim weekly free currency (7d cooldown)
+- `/daily` — Claim daily currency with streak bonuses (UTC calendar days)
+- `/weekly` — Claim weekly currency (7-day cooldown)
 - `/pay user amount` — Send currency to another user
+- `/leaderboard [limit]` — Top balances in the server
+- **Message activity** — Earn coins for chatting (30s cooldown per user; requires bot **View Channel** in that channel)
 
-### House Games (PvE)
-- `/coinflip amount side:heads|tails` — 50/50 coinflip against the house
-- `/blackjack amount` — Interactive blackjack with Hit / Stand / Double buttons
+### Casino (house games)
+- `/casino` — Menu for all house games, including **lottery ticket purchases**
+- **Coinflip** — 50/50 against the house
+- **Blackjack** — Interactive blackjack
+- **Slots** — Match symbols for up to 20x
+- **Hi-Lo** — Guess higher or lower
+- **Lucky Number** — Pick 1–100; exact match pays 25x
+- **Mines** — Reveal gems, avoid mines, cash out anytime
+- **Plinko** — Drop the chip for up to 5x
+- **Lottery** — Buy tickets from the casino menu or via `/lottery`
 
-### PvP Games
-- `/rps challenge user amount [match]` — Rock Paper Scissors wager
+Direct commands: `/coinflip`, `/blackjack`
+
+### Lottery
+- `/lottery buy [count]` — Buy tickets for the current guild round
+- `/lottery status` — Pot size, your tickets, odds, time until draw
+- `/lottery draw` — Admin: force an early draw (Manage Server)
+- Auto-draw on a schedule; one random ticket wins the pot (5% house fee by default)
+
+### PvP games
+- `/challenge` — Menu to pick a game, opponent, wager, and match format
+- `/rps challenge user amount [match]` — Rock Paper Scissors
 - `/dice challenge user amount [match]` — 2-dice duel (higher total wins)
 - `/roulette challenge user amount [match]` — Russian Roulette; take turns pulling the trigger
-- `/coinflipduel challenge user amount side [match]` — Coinflip duel against another player
-- `match`: **Single game** (default) or **Best 2 of 3**
+- `/coinflipduel challenge user amount side [match]` — Coinflip duel; challenger picks a side
+
+**Match formats:** `Single game` (default) or `Best 2 of 3`  
+Ties refund both players in a single game; ties replay the round in best-of-3.
 
 ### Admin (Manage Server permission required)
 - `/give user amount [reason]` — Give currency
@@ -50,7 +70,7 @@ In the Developer Portal → **Installation**:
 
 The bot needs **Guild Messages** (configured in code). Message Content intent is **not** required for coin rewards.
 
-Ensure the bot role can **View Channel** and **Read Message History** in channels where users chat — without these, Discord will not send message events to the bot.
+Ensure the bot role has **View Channel** and **Read Message History** in channels where users chat — without **View Channel**, Discord will not send message events to the bot (slash commands can still work).
 
 ## Local Development
 
@@ -71,7 +91,7 @@ bun run db:migrate
 # Register slash commands (set GUILD_ID in .env for instant guild-scoped commands)
 bun run register-commands
 
-# Start the bot
+# Start the bot (stop the droplet bot first if using the same token)
 bun run dev
 ```
 
@@ -83,14 +103,22 @@ bun run dev
 | `CLIENT_ID` | Yes | — | Application ID |
 | `POSTGRES_PASSWORD` | No | `postgres` | Postgres password (Docker Compose; keep in `.env` only) |
 | `DATABASE_URL` | Yes | — | Postgres connection string (local CLI; password must match `POSTGRES_PASSWORD`) |
-| `GUILD_ID` | No | — | Register commands to one guild (faster dev) |
+| `GUILD_ID` | No | — | Dev guild for instant command registration |
+| `GUILD_COMMANDS_ONLY` | No | `false` | Register commands to `GUILD_ID` only (local dev) |
 | `CURRENCY_NAME` | No | `coins` | Display name for currency |
 | `STARTING_BALANCE` | No | `0` | Balance for new wallets |
-| `DAILY_AMOUNT` | No | `500` | Daily claim amount |
+| `DAILY_AMOUNT` | No | `500` | Daily claim base amount |
+| `DAILY_STREAK_BONUS_PER_DAY` | No | `10` | Extra coins per streak day |
+| `DAILY_MAX_PAYOUT` | No | `10000` | Daily claim cap |
 | `WEEKLY_AMOUNT` | No | `2500` | Weekly claim amount |
+| `MESSAGE_REWARD_AMOUNT` | No | `1` | Coins per rewarded message |
+| `MESSAGE_REWARD_COOLDOWN_MS` | No | `30000` | Message reward cooldown |
 | `MIN_BET` | No | `1` | Minimum wager/transfer |
 | `MAX_BET` | No | `100000` | Maximum wager/transfer |
 | `CHALLENGE_EXPIRY_MINUTES` | No | `5` | PvP challenge timeout |
+| `LOTTERY_TICKET_PRICE` | No | `100` | Price per lottery ticket |
+| `LOTTERY_DRAW_INTERVAL_DAYS` | No | `7` | Days between auto-draws |
+| `LOTTERY_RAKE_PERCENT` | No | `5` | House fee on lottery pot |
 | `BLACKJACK_SESSION_TIMEOUT_MINUTES` | No | `10` | Idle blackjack timeout |
 
 Local Postgres (via Docker Compose) runs on port **5434**. Set the password once in `.env` — never edit `docker-compose.yml`:
@@ -131,6 +159,16 @@ docker compose run --rm bot bun run register-commands
 
 The bot container runs migrations automatically on startup via `start:prod`.
 
+### Routine updates
+
+```bash
+cd ~/AndBot
+git pull origin main
+docker compose up -d --build
+docker compose run --rm bot bun run register-commands   # if commands changed
+docker compose logs bot --tail 20
+```
+
 ### Backups (recommended)
 
 Add a nightly cron on the droplet:
@@ -139,19 +177,12 @@ Add a nightly cron on the droplet:
 docker compose exec postgres pg_dump -U postgres andbot > /backups/andbot-$(date +%F).sql
 ```
 
-### Updates
-
-```bash
-git pull
-docker compose up -d --build
-```
-
 ## Project Structure
 
 ```
 src/
-├── commands/       # Slash command handlers
-├── services/       # Wallet, games, claims logic
+├── commands/       # Slash command handlers (casino, challenge, pvp, lottery, …)
+├── services/       # Wallet, games, claims, lottery logic
 ├── handlers/       # Interaction router
 ├── db/             # Schema, migrations, client
 ├── bot/            # Discord client

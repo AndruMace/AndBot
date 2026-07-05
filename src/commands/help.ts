@@ -35,6 +35,7 @@ export async function handleHelp(
           "**Lucky Number** — Pick 1–100; exact match 25x, close guesses 2–5x",
           "**Mines** — Reveal gems, avoid mines, cash out anytime",
           "**Plinko** — Drop the chip; land in buckets up to 5x",
+          "**Lottery** — Buy tickets from the casino menu",
           "`/coinflip` and `/blackjack` also work as direct commands",
         ].join("\n"),
       },
@@ -51,6 +52,7 @@ export async function handleHelp(
       {
         name: "PvP Games",
         value: [
+          "`/challenge` — Menu to pick a game, opponent, wager, and match format",
           "`/rps challenge user amount [match]` — Rock Paper Scissors",
           "`/dice challenge user amount [match]` — Roll 2 dice; higher total wins",
           "`/roulette challenge user amount [match]` — Russian Roulette; take turns pulling the trigger",

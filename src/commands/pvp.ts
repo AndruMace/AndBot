@@ -5,6 +5,7 @@ import {
   ButtonStyle,
   type ChatInputCommandInteraction,
   type ButtonInteraction,
+  type TextChannel,
 } from "discord.js";
 import type { Config } from "../config";
 import type { WalletService } from "../services/wallet";
@@ -164,6 +165,53 @@ function buildActiveGameView(challenge: PvpChallenge, config: Config) {
     }
   }
 }
+
+async function postPvpChallengeInChannel(
+  channel: TextChannel,
+  guildId: string,
+  challengerId: string,
+  challengerName: string,
+  db: Database,
+  wallet: WalletService,
+  config: Config,
+  params: {
+    gameType: PvpGameType;
+    opponentId: string;
+    amount: number;
+    matchFormat: PvpMatchFormat;
+    challengerChoice?: string;
+    challengeDetails?: string;
+  },
+) {
+  const pvp = createPvpChallengeService(db, wallet, config);
+  const challenge = await pvp.createChallenge(
+    guildId,
+    channel.id,
+    challengerId,
+    params.opponentId,
+    params.gameType,
+    params.amount,
+    { matchFormat: params.matchFormat, challengerChoice: params.challengerChoice },
+  );
+
+  const matchLabel = formatMatchLabel(params.matchFormat);
+  const details = params.challengeDetails ? `\n${params.challengeDetails}` : "";
+  const embed = challengeEmbed(
+    `${GAME_TITLES[params.gameType]} Challenge`,
+    `<@${params.opponentId}>, you have been challenged by **${challengerName}**!\nWager: **${formatCurrency(params.amount, config)}** · ${matchLabel}${details}\n\nAccept or decline below.`,
+    config,
+  );
+
+  const message = await channel.send({
+    embeds: [embed],
+    components: [buildAcceptDeclineRow(challenge.id)],
+  });
+
+  await pvp.setMessageId(challenge.id, message.id);
+  return challenge;
+}
+
+export { postPvpChallengeInChannel };
 
 async function createAndPostChallenge(
   interaction: ChatInputCommandInteraction,

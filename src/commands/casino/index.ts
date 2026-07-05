@@ -12,6 +12,9 @@ export {
   handleCasinoMinesConfig,
   handleCasinoMinesReveal,
   handleCasinoMinesCashout,
+  handleCasinoLotteryPick,
+  handleCasinoLotteryBuy,
+  handleCasinoLotteryStatus,
   isCasinoGame,
 } from "./handlers";
 export type { CasinoGame } from "./types";
