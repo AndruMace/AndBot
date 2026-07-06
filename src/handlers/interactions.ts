@@ -48,6 +48,8 @@ import {
   handleChallengeMatchSelect,
   handleChallengeSideSelect,
   handleChallengeWager,
+  handleChallengeUsernamePrompt,
+  handleChallengeUsernameModal,
   isChallengeGame,
 } from "../commands/challenge";
 import type { PvpMatchFormat } from "../db/schema";
@@ -158,7 +160,12 @@ export function registerInteractionHandler(client: Client, db: Database, config:
           const [action, sub, ...rest] = challengeParts;
 
           if (action === "pick" && isChallengeGame(sub!)) {
-            await handleChallengePick(interaction, sub!);
+            await handleChallengePick(interaction, sub!, wallet, config);
+            return;
+          }
+
+          if (action === "name" && isChallengeGame(sub!)) {
+            await handleChallengeUsernamePrompt(interaction, sub!);
             return;
           }
 
@@ -386,6 +393,21 @@ export function registerInteractionHandler(client: Client, db: Database, config:
       }
 
       if (interaction.isModalSubmit()) {
+        const challengeModalParts = parseButtonId(interaction.customId, "challenge");
+        if (
+          challengeModalParts?.[0] === "modal" &&
+          challengeModalParts[1] === "user" &&
+          isChallengeGame(challengeModalParts[2]!)
+        ) {
+          await handleChallengeUsernameModal(
+            interaction,
+            challengeModalParts[2]!,
+            wallet,
+            config,
+          );
+          return;
+        }
+
         const casinoParts = parseButtonId(interaction.customId, "casino");
         if (casinoParts && casinoParts[0] === "modal") {
           if (casinoParts[1] === "custom" && isCasinoGame(casinoParts[2]!)) {

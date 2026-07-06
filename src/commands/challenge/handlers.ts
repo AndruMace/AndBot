@@ -3,10 +3,10 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  UserSelectMenuBuilder,
   type ChatInputCommandInteraction,
   type ButtonInteraction,
   type UserSelectMenuInteraction,
+  type ModalSubmitInteraction,
   type TextChannel,
 } from "discord.js";
 import type { Config } from "../../config";
@@ -20,9 +20,15 @@ import { assertGuild } from "../../utils/permissions";
 import { BetValidationError, formatCurrency, validateBetAmount } from "../../utils/bets";
 import { buildButtonId } from "../../utils/buttons";
 import { ephemeralOptions } from "../../utils/discord";
+import { MemberLookupError, resolveGuildMemberByQuery } from "../../utils/guildMembers";
 import { formatMatchLabel } from "../../services/pvp/match";
 import { getWagerPresets, formatWagerButtonLabel, resolveWagerAmount } from "../casino/wagers";
 import { CHALLENGE_GAMES, isChallengeGame } from "./types";
+import {
+  opponentSelectRow,
+  opponentUsernameButtonRow,
+  opponentUsernameModal,
+} from "./components";
 
 type PendingSetup = {
   game: PvpGameType;
@@ -32,22 +38,28 @@ type PendingSetup = {
 };
 
 const pendingSetups = new Map<string, PendingSetup>();
+/** Opponent chosen via `/challenge user:@name` before picking a game. */
+const pendingOpponents = new Map<string, string>();
 
 function pendingKey(userId: string): string {
   return userId;
 }
 
-function challengeMenuEmbed(config: Config): EmbedBuilder {
+function challengeMenuEmbed(config: Config, opponentId?: string): EmbedBuilder {
   const fields = CHALLENGE_GAMES.map((g) => ({
     name: `${g.emoji} ${g.label}`,
     value: g.description,
     inline: true,
   }));
 
+  const description = opponentId
+    ? `Opponent: <@${opponentId}>\n\nPick a game below, then set the wager and match format.`
+    : "Pick a game below, then choose an opponent and set the wager.\n\nUse **Type username** if the member list search does not find someone.";
+
   return new EmbedBuilder()
     .setColor(0xfee75c)
     .setTitle("PvP Challenges")
-    .setDescription("Pick a game below, choose an opponent, then set the wager and match format.")
+    .setDescription(description)
     .addFields(fields)
     .setFooter({
       text: `Wagers: ${formatCurrency(config.MIN_BET, config)} – ${formatCurrency(config.MAX_BET, config)}`,
@@ -73,14 +85,46 @@ function challengeMenuRows(): ActionRowBuilder<ButtonBuilder>[] {
   return rows;
 }
 
-function opponentSelectRow(game: PvpGameType): ActionRowBuilder<UserSelectMenuBuilder> {
-  return new ActionRowBuilder<UserSelectMenuBuilder>().addComponents(
-    new UserSelectMenuBuilder()
-      .setCustomId(buildButtonId("challenge", "user", game))
-      .setPlaceholder("Choose your opponent")
-      .setMinValues(1)
-      .setMaxValues(1),
-  );
+function opponentPickerComponents(game: PvpGameType) {
+  return [opponentSelectRow(game), opponentUsernameButtonRow(game)];
+}
+
+async function showChallengeSetup(
+  interaction: ButtonInteraction | UserSelectMenuInteraction | ModalSubmitInteraction,
+  game: PvpGameType,
+  opponentId: string,
+  wallet: WalletService,
+  config: Config,
+  mode: "reply" | "update",
+) {
+  const guildId = assertGuild(interaction);
+  const invalid = validateOpponent(interaction.user.id, opponentId);
+  if (invalid) {
+    await interaction.reply(ephemeralOptions({ content: invalid }));
+    return;
+  }
+
+  const setup: PendingSetup = {
+    game,
+    opponentId,
+    matchFormat: "single",
+  };
+  pendingSetups.set(pendingKey(interaction.user.id), setup);
+  pendingOpponents.delete(interaction.user.id);
+
+  const userWallet = await wallet.getOrCreateWallet(guildId, interaction.user.id);
+  const payload = {
+    ...ephemeralOptions({
+      embeds: [setupEmbed(setup, config, userWallet.balance, userWallet.lastWager ?? null)],
+      components: setupComponents(setup, config, userWallet.balance, userWallet.lastWager ?? null),
+    }),
+  };
+
+  if (mode === "reply") {
+    await interaction.reply(payload);
+  } else {
+    await interaction.update(payload);
+  }
 }
 
 function setupEmbed(
@@ -225,13 +269,33 @@ function setupComponents(
   return rows;
 }
 
+function validateOpponent(challengerId: string, opponentId: string): string | null {
+  if (opponentId === challengerId) return "You cannot challenge yourself.";
+  return null;
+}
+
 export async function handleChallenge(
   interaction: ChatInputCommandInteraction,
   config: Config,
 ) {
   assertGuild(interaction);
+  const opponent = interaction.options.getUser("user");
+
+  if (opponent) {
+    if (opponent.bot) {
+      await interaction.reply(ephemeralOptions({ content: "You cannot challenge bots." }));
+      return;
+    }
+    const invalid = validateOpponent(interaction.user.id, opponent.id);
+    if (invalid) {
+      await interaction.reply(ephemeralOptions({ content: invalid }));
+      return;
+    }
+    pendingOpponents.set(interaction.user.id, opponent.id);
+  }
+
   await interaction.reply({
-    embeds: [challengeMenuEmbed(config)],
+    embeds: [challengeMenuEmbed(config, opponent?.id ?? pendingOpponents.get(interaction.user.id))],
     components: challengeMenuRows(),
   });
 }
@@ -239,8 +303,17 @@ export async function handleChallenge(
 export async function handleChallengePick(
   interaction: ButtonInteraction,
   game: PvpGameType,
+  wallet: WalletService,
+  config: Config,
 ) {
   assertGuild(interaction);
+
+  const presetOpponent = pendingOpponents.get(interaction.user.id);
+  if (presetOpponent) {
+    await showChallengeSetup(interaction, game, presetOpponent, wallet, config, "reply");
+    return;
+  }
+
   await interaction.reply({
     ...ephemeralOptions({
       embeds: [
@@ -248,12 +321,48 @@ export async function handleChallengePick(
           .setColor(0xfee75c)
           .setTitle("Choose Opponent")
           .setDescription(
-            `Select who you want to challenge to **${CHALLENGE_GAMES.find((g) => g.id === game)!.label}**.`,
+            `Who do you want to challenge to **${CHALLENGE_GAMES.find((g) => g.id === game)!.label}**?\n\n` +
+              "• **Type username** — enter their name (recommended)\n" +
+              "• **Member list** — scroll if search does not work",
           ),
       ],
-      components: [opponentSelectRow(game)],
+      components: opponentPickerComponents(game),
     }),
   });
+}
+
+export async function handleChallengeUsernamePrompt(
+  interaction: ButtonInteraction,
+  game: PvpGameType,
+) {
+  assertGuild(interaction);
+  await interaction.showModal(opponentUsernameModal(game));
+}
+
+export async function handleChallengeUsernameModal(
+  interaction: ModalSubmitInteraction,
+  game: PvpGameType,
+  wallet: WalletService,
+  config: Config,
+) {
+  const guild = interaction.guild;
+  if (!guild) {
+    await interaction.reply(ephemeralOptions({ content: "This command only works in a server." }));
+    return;
+  }
+
+  const query = interaction.fields.getTextInputValue("username");
+
+  try {
+    const member = await resolveGuildMemberByQuery(guild, query, interaction.user.id);
+    await showChallengeSetup(interaction, game, member.id, wallet, config, "reply");
+  } catch (err) {
+    if (err instanceof MemberLookupError) {
+      await interaction.reply(ephemeralOptions({ content: err.message }));
+      return;
+    }
+    throw err;
+  }
 }
 
 export async function handleChallengeUserSelect(
@@ -262,7 +371,7 @@ export async function handleChallengeUserSelect(
   wallet: WalletService,
   config: Config,
 ) {
-  const guildId = assertGuild(interaction);
+  assertGuild(interaction);
   const opponent = interaction.users.first();
 
   if (!opponent) {
@@ -275,23 +384,13 @@ export async function handleChallengeUserSelect(
     return;
   }
 
-  if (opponent.id === interaction.user.id) {
-    await interaction.reply(ephemeralOptions({ content: "You cannot challenge yourself." }));
+  const invalid = validateOpponent(interaction.user.id, opponent.id);
+  if (invalid) {
+    await interaction.reply(ephemeralOptions({ content: invalid }));
     return;
   }
 
-  const setup: PendingSetup = {
-    game,
-    opponentId: opponent.id,
-    matchFormat: "single",
-  };
-  pendingSetups.set(pendingKey(interaction.user.id), setup);
-
-  const userWallet = await wallet.getOrCreateWallet(guildId, interaction.user.id);
-  await interaction.update({
-    embeds: [setupEmbed(setup, config, userWallet.balance, userWallet.lastWager ?? null)],
-    components: setupComponents(setup, config, userWallet.balance, userWallet.lastWager ?? null),
-  });
+  await showChallengeSetup(interaction, game, opponent.id, wallet, config, "update");
 }
 
 export async function handleChallengeMatchSelect(
@@ -406,6 +505,7 @@ export async function handleChallengeWager(
     );
 
     pendingSetups.delete(pendingKey(interaction.user.id));
+    pendingOpponents.delete(interaction.user.id);
 
     await interaction.update({
       embeds: [

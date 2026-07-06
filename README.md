@@ -34,7 +34,7 @@ Direct commands: `/coinflip`, `/blackjack`
 - Auto-draw on a schedule; one random ticket wins the pot (5% house fee by default)
 
 ### PvP games
-- `/challenge` — Menu to pick a game, opponent, wager, and match format
+- `/challenge [user]` — Menu to pick a game, opponent, wager, and match format (use `user:@name` for reliable opponent lookup)
 - `/rps challenge user amount [match]` — Rock Paper Scissors
 - `/dice challenge user amount [match]` — 2-dice duel (higher total wins)
 - `/roulette challenge user amount [match]` — Russian Roulette; take turns pulling the trigger
@@ -71,6 +71,8 @@ In the Developer Portal → **Installation**:
 The bot needs **Guild Messages** (configured in code). Message Content intent is **not** required for coin rewards.
 
 Ensure the bot role has **View Channel** and **Read Message History** in channels where users chat — without **View Channel**, Discord will not send message events to the bot (slash commands can still work).
+
+**Server Members Intent** must be enabled in the Developer Portal (and is requested in code) for `/challenge` **Type username** lookup.
 
 ## Local Development
 

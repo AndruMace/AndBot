@@ -101,7 +101,12 @@ export const commands = [
     .setDescription("Browse casino games and play from a menu"),
   new SlashCommandBuilder()
     .setName("challenge")
-    .setDescription("Browse PvP games and send a challenge from a menu"),
+    .setDescription("Browse PvP games and send a challenge from a menu")
+    .addUserOption((opt) =>
+      opt
+        .setName("user")
+        .setDescription("Opponent to challenge (recommended — use @mention search)"),
+    ),
   new SlashCommandBuilder()
     .setName("coinflip")
     .setDescription("Flip a coin against the house")
