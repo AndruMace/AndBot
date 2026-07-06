@@ -50,6 +50,7 @@ import {
   handleChallengeWager,
   handleChallengeUsernamePrompt,
   handleChallengeUsernameModal,
+  handleChallengeRecentOpponent,
   isChallengeGame,
 } from "../commands/challenge";
 import type { PvpMatchFormat } from "../db/schema";
@@ -160,7 +161,18 @@ export function registerInteractionHandler(client: Client, db: Database, config:
           const [action, sub, ...rest] = challengeParts;
 
           if (action === "pick" && isChallengeGame(sub!)) {
-            await handleChallengePick(interaction, sub!, wallet, config);
+            await handleChallengePick(interaction, sub!, db, wallet, config);
+            return;
+          }
+
+          if (action === "recent" && isChallengeGame(sub!) && rest[0]) {
+            await handleChallengeRecentOpponent(
+              interaction,
+              sub!,
+              rest[0],
+              wallet,
+              config,
+            );
             return;
           }
 

@@ -7,5 +7,6 @@ export {
   handleChallengeWager,
   handleChallengeUsernamePrompt,
   handleChallengeUsernameModal,
+  handleChallengeRecentOpponent,
   isChallengeGame,
 } from "./handlers";

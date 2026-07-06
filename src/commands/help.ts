@@ -52,7 +52,7 @@ export async function handleHelp(
       {
         name: "PvP Games",
         value: [
-          "`/challenge [user]` — Menu to pick a game, opponent, wager, and match format (use **Type username** if search fails)",
+          "`/challenge [user]` — PvP menu: recent opponents, type username, or member list",
           "`/rps challenge user amount [match]` — Rock Paper Scissors",
           "`/dice challenge user amount [match]` — Roll 2 dice; higher total wins",
           "`/roulette challenge user amount [match]` — Russian Roulette; take turns pulling the trigger",

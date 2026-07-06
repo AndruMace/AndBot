@@ -9,6 +9,30 @@ import {
 } from "discord.js";
 import { buildButtonId } from "../../utils/buttons";
 import type { PvpGameType } from "../../db/schema";
+import type { RecentOpponentChoice } from "../../services/pvp/recentOpponents";
+
+export function recentOpponentRows(
+  game: PvpGameType,
+  opponents: RecentOpponentChoice[],
+): ActionRowBuilder<ButtonBuilder>[] {
+  if (opponents.length === 0) return [];
+
+  const rows: ActionRowBuilder<ButtonBuilder>[] = [];
+  for (let i = 0; i < opponents.length; i += 5) {
+    const chunk = opponents.slice(i, i + 5);
+    rows.push(
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        ...chunk.map((opponent) =>
+          new ButtonBuilder()
+            .setCustomId(buildButtonId("challenge", "recent", game, opponent.id))
+            .setLabel(opponent.label)
+            .setStyle(ButtonStyle.Secondary),
+        ),
+      ),
+    );
+  }
+  return rows;
+}
 
 export function opponentUsernameModal(game: PvpGameType): ModalBuilder {
   return new ModalBuilder()
@@ -32,7 +56,7 @@ export function opponentSelectRow(game: PvpGameType): ActionRowBuilder<UserSelec
   return new ActionRowBuilder<UserSelectMenuBuilder>().addComponents(
     new UserSelectMenuBuilder()
       .setCustomId(buildButtonId("challenge", "user", game))
-      .setPlaceholder("Browse members (scroll if search fails)")
+      .setPlaceholder("Or browse all members (scroll — search often fails)")
       .setMinValues(1)
       .setMaxValues(1),
   );

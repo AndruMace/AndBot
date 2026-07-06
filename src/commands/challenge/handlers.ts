@@ -28,7 +28,10 @@ import {
   opponentSelectRow,
   opponentUsernameButtonRow,
   opponentUsernameModal,
+  recentOpponentRows,
 } from "./components";
+import { getRecentOpponentChoices } from "../../services/pvp/recentOpponents";
+import type { Guild } from "discord.js";
 
 type PendingSetup = {
   game: PvpGameType;
@@ -85,8 +88,37 @@ function challengeMenuRows(): ActionRowBuilder<ButtonBuilder>[] {
   return rows;
 }
 
-function opponentPickerComponents(game: PvpGameType) {
-  return [opponentSelectRow(game), opponentUsernameButtonRow(game)];
+function opponentPickerDescription(game: PvpGameType, hasRecent: boolean): string {
+  const gameLabel = CHALLENGE_GAMES.find((g) => g.id === game)!.label;
+  const lines = [`Who do you want to challenge to **${gameLabel}**?`, ""];
+
+  if (hasRecent) {
+    lines.push("1. **Recent opponents** — tap someone you've played before");
+    lines.push("2. **Type username** — enter their name");
+    lines.push("3. **Member list** — scroll the list (typing search often fails)");
+  } else {
+    lines.push("1. **Type username** — enter their name");
+    lines.push("2. **Member list** — scroll the list (typing search often fails)");
+  }
+
+  return lines.join("\n");
+}
+
+async function buildOpponentPickerComponents(
+  guild: Guild,
+  db: Database,
+  userId: string,
+  game: PvpGameType,
+) {
+  const recent = await getRecentOpponentChoices(guild, db, userId);
+  return {
+    recent,
+    components: [
+      ...recentOpponentRows(game, recent),
+      opponentUsernameButtonRow(game),
+      opponentSelectRow(game),
+    ],
+  };
 }
 
 async function showChallengeSetup(
@@ -303,10 +335,15 @@ export async function handleChallenge(
 export async function handleChallengePick(
   interaction: ButtonInteraction,
   game: PvpGameType,
+  db: Database,
   wallet: WalletService,
   config: Config,
 ) {
-  assertGuild(interaction);
+  const guild = interaction.guild;
+  if (!guild) {
+    await interaction.reply(ephemeralOptions({ content: "This command only works in a server." }));
+    return;
+  }
 
   const presetOpponent = pendingOpponents.get(interaction.user.id);
   if (presetOpponent) {
@@ -314,21 +351,35 @@ export async function handleChallengePick(
     return;
   }
 
+  const { recent, components } = await buildOpponentPickerComponents(
+    guild,
+    db,
+    interaction.user.id,
+    game,
+  );
+
   await interaction.reply({
     ...ephemeralOptions({
       embeds: [
         new EmbedBuilder()
           .setColor(0xfee75c)
           .setTitle("Choose Opponent")
-          .setDescription(
-            `Who do you want to challenge to **${CHALLENGE_GAMES.find((g) => g.id === game)!.label}**?\n\n` +
-              "• **Type username** — enter their name (recommended)\n" +
-              "• **Member list** — scroll if search does not work",
-          ),
+          .setDescription(opponentPickerDescription(game, recent.length > 0)),
       ],
-      components: opponentPickerComponents(game),
+      components,
     }),
   });
+}
+
+export async function handleChallengeRecentOpponent(
+  interaction: ButtonInteraction,
+  game: PvpGameType,
+  opponentId: string,
+  wallet: WalletService,
+  config: Config,
+) {
+  assertGuild(interaction);
+  await showChallengeSetup(interaction, game, opponentId, wallet, config, "update");
 }
 
 export async function handleChallengeUsernamePrompt(
