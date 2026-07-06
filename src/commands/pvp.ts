@@ -359,7 +359,10 @@ async function applyRoundOutcome(
   config: Config,
 ): Promise<{ title: string; description: string; components: ActionRowBuilder<ButtonBuilder>[] }> {
   const plan = buildRoundOutcome(challenge, roundResult);
-  let updated = await pvp.updateChallenge(challenge.id, plan.updates);
+  let updated = challenge;
+  if (Object.keys(plan.updates).length > 0) {
+    updated = await pvp.updateChallenge(challenge.id, plan.updates);
+  }
 
   if (plan.kind === "match_complete") {
     await pvp.completeChallenge(updated, plan.winnerId);

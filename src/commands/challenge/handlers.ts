@@ -218,7 +218,10 @@ function setupComponents(
     );
   }
 
-  rows.push(secondary);
+  if (secondary.components.length > 0) {
+    rows.push(secondary);
+  }
+
   return rows;
 }
 
