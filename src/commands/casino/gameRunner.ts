@@ -103,10 +103,11 @@ async function runSlotsAnimation(
   if (payout > 0) {
     await wallet.credit(guildId, userId, payout, "slots_win", undefined, { reels });
   }
+  const balance = await wallet.getBalance(guildId, userId);
 
   const body =
     `${formatReels(reels)}\n\n${description}\n` +
-    publicResultFooter(amount, payout, config);
+    publicResultFooter(amount, payout, config, { lost: payout === 0, balance });
 
   await edit({
     embeds: [
@@ -152,11 +153,12 @@ async function runPlinkoAnimation(
       bucket: bucket.label,
     });
   }
+  const balance = await wallet.getBalance(guildId, userId);
 
   const body =
     `${renderPlinkoFrame(path, path.length - 1)}\n` +
     `Landed in **${bucket.label}**!\n` +
-    publicResultFooter(amount, payout, config);
+    publicResultFooter(amount, payout, config, { lost: payout < amount, balance });
 
   await edit({
     embeds: [

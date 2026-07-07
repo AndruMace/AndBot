@@ -30,13 +30,16 @@ export function publicResultFooter(
   wager: number,
   payout: number,
   config: Config,
-  options?: { lost?: boolean },
+  options?: { lost?: boolean; balance?: number },
 ): string {
   let footer = `Wager: **${formatCurrency(wager, config)}**`;
   if (payout > 0) {
     footer += `\nPayout: **${formatCurrency(payout, config)}**`;
   } else if (options?.lost) {
     footer += `\nLost: **${formatCurrency(wager, config)}**`;
+  }
+  if (options?.balance != null) {
+    footer += `\nBalance: **${formatCurrency(options.balance, config)}**`;
   }
   return footer;
 }

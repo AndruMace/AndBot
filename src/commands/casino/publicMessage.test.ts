@@ -22,11 +22,17 @@ describe("publicMessage", () => {
     expect(header).toContain("500");
   });
 
-  test("publicResultFooter omits balance", () => {
+  test("publicResultFooter omits balance when not provided", () => {
     const footer = publicResultFooter(100, 200, config);
     expect(footer).toContain("Wager");
     expect(footer).toContain("Payout");
     expect(footer).not.toContain("Balance");
+  });
+
+  test("publicResultFooter includes balance when provided", () => {
+    const footer = publicResultFooter(100, 200, config, { balance: 1500 });
+    expect(footer).toContain("Balance");
+    expect(footer).toContain("**");
   });
 
   test("publicResultFooter shows loss line", () => {
@@ -56,7 +62,7 @@ describe("publicMessage", () => {
     expect(description).not.toMatch(/ticket number/i);
   });
 
-  test("formatPresentationOutcome strips balance when public", () => {
+  test("formatPresentationOutcome includes balance when public", () => {
     const ctx: PresentationContext = {
       isPublic: true,
       userId: "user123",
@@ -65,7 +71,7 @@ describe("publicMessage", () => {
       config,
     };
     const footer = formatPresentationOutcome(ctx, 100, 200, config, { balance: 9999 });
-    expect(footer).not.toContain("Balance");
+    expect(footer).toContain("Balance");
     expect(footer).toContain("Payout");
   });
 

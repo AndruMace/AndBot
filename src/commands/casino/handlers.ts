@@ -672,12 +672,6 @@ export async function handleCasinoCoinflipSide(
         config,
       },
     );
-    const balance = await wallet.getBalance(guildId, interaction.user.id);
-    await interaction.followUp(
-      ephemeralOptions({
-        content: `Balance: **${formatCurrency(balance, config)}**`,
-      }),
-    );
   } catch (err) {
     if (err instanceof BetValidationError || err instanceof InsufficientFundsError) {
       const payload = { content: err.message, embeds: [], components: [] as [] };
@@ -728,7 +722,7 @@ export async function handleCasinoHiLo(
     const body =
       `You guessed **${choice}**.\n` +
       `Previous: **${currentRank}** → Next: **${nextCard.label}**\n` +
-      publicResultFooter(amount, payout, config, { lost: !won });
+      publicResultFooter(amount, payout, config, { lost: !won, balance });
 
     await interaction.update({
       embeds: [
@@ -744,12 +738,6 @@ export async function handleCasinoHiLo(
       ],
       components: casinoPostGameComponents("hilo"),
     });
-
-    await interaction.followUp(
-      ephemeralOptions({
-        content: `Balance: **${formatCurrency(balance, config)}**`,
-      }),
-    );
   } catch (err) {
     if (err instanceof BetValidationError) {
       await interaction.reply({ content: err.message, ephemeral: true });
@@ -870,12 +858,13 @@ export async function handleCasinoMinesReveal(
     const updated = await mines.revealTile(session, tileIndex);
 
     if (updated.status === "busted") {
+      const balance = await wallet.getBalance(updated.guildId, updated.userId);
       await interaction.update({
         embeds: [
           buildMinesEmbed(
             updated,
             config,
-            "💥 **Boom!** You hit a mine and lost your wager.",
+            `💥 **Boom!** You hit a mine and lost your wager.\n\n${publicResultFooter(updated.wager, 0, config, { lost: true, balance })}`,
             updated.userId,
           ),
         ],
@@ -925,18 +914,12 @@ export async function handleCasinoMinesCashout(
         buildMinesEmbed(
           updated,
           config,
-          `💰 **Cashed out!** Won **${formatCurrency(payout, config)}**`,
+          `💰 **Cashed out!** Won **${formatCurrency(payout, config)}**\n\n${publicResultFooter(updated.wager, payout, config, { balance })}`,
           updated.userId,
         ),
       ],
       components: [...buildMinesComponents(updated), ...casinoPostGameComponents("mines")],
     });
-
-    await interaction.followUp(
-      ephemeralOptions({
-        content: `Balance: **${formatCurrency(balance, config)}**`,
-      }),
-    );
   } catch (err) {
     if (err instanceof MinesSessionError) {
       await interaction.reply({ content: err.message, ephemeral: true });

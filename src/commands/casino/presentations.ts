@@ -48,31 +48,14 @@ function describePublic(
   );
 }
 
-function privateBalanceLine(balance: number, config: Config): string {
-  return `\nBalance: **${formatCurrency(balance, config)}**`;
-}
-
 function outcomeFooter(
-  ctx: PresentationContext | undefined,
+  _ctx: PresentationContext | undefined,
   wager: number,
   payout: number,
   config: Config,
   options?: { lost?: boolean; balance?: number },
 ): string {
-  if (ctx?.isPublic) {
-    return publicResultFooter(wager, payout, config, options);
-  }
-
-  let footer = `Wager: **${formatCurrency(wager, config)}**`;
-  if (payout > 0) {
-    footer += `\nPayout: **${formatCurrency(payout, config)}**`;
-  } else if (options?.lost) {
-    footer += `\nLost: **${formatCurrency(wager, config)}**`;
-  }
-  if (options?.balance != null) {
-    footer += privateBalanceLine(options.balance, config);
-  }
-  return footer;
+  return publicResultFooter(wager, payout, config, options);
 }
 
 export function formatPresentationOutcome(
@@ -187,7 +170,7 @@ export async function runLuckyAnimation(
 
   const body =
     `${renderLuckyFrame(roll, pick, false)}\n${description}\n` +
-    outcomeFooter(ctx, amount, payout, config, { balance });
+    outcomeFooter(ctx, amount, payout, config, { lost: payout === 0, balance });
 
   await edit({
     embeds: [
