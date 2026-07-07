@@ -15,6 +15,8 @@ export {
   handleCasinoLotteryPick,
   handleCasinoLotteryBuy,
   handleCasinoLotteryStatus,
+  handleCasinoLotteryCustomPrompt,
+  handleCasinoLotteryCustomModal,
   isCasinoGame,
 } from "./handlers";
 export type { CasinoGame } from "./types";

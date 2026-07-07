@@ -16,8 +16,7 @@ import type { LotteryService } from "../../services/lottery/rounds";
 import { LotteryError, InsufficientFundsError as LotteryInsufficientFundsError } from "../../services/lottery/rounds";
 import { MinesSessionError } from "../../services/casino/mines/session";
 import { BlackjackSessionError } from "../../services/blackjack/session";
-import { playCoinflip, type CoinSide } from "../../services/coinflip";
-import { InsufficientFundsError } from "../../services/wallet";
+import { type CoinSide } from "../../services/coinflip";
 import { assertGuild } from "../../utils/permissions";
 import { BetValidationError, formatCurrency } from "../../utils/bets";
 import { buildButtonId } from "../../utils/buttons";
@@ -36,6 +35,7 @@ import {
   getLotteryTicketPresets,
   LOTTERY_MENU,
   lotteryTicketDescription,
+  parseLotteryTicketCount,
 } from "./lottery-menu";
 import {
   customLuckyNumberModal,
@@ -43,6 +43,7 @@ import {
   luckyNumberRows,
   wagerSelectionEmbed,
   wagerSelectionRows,
+  customLotteryTicketModal,
 } from "./components";
 import {
   executeCasinoGame,
@@ -50,6 +51,7 @@ import {
   randomLuckyPick,
   showLuckyNumberPicker,
 } from "./gameRunner";
+import { runCoinflipAnimation } from "./presentations";
 import {
   resolveWagerAmount,
 } from "./wagers";
@@ -199,6 +201,10 @@ export async function handleCasino(
 
 function lotteryTicketRows(config: Config, balance: number): ActionRowBuilder<ButtonBuilder>[] {
   const presets = getLotteryTicketPresets(config, balance);
+  const maxTickets = Math.min(
+    Math.floor(balance / config.LOTTERY_TICKET_PRICE),
+    config.LOTTERY_MAX_TICKETS_PER_PURCHASE,
+  );
   const rows: ActionRowBuilder<ButtonBuilder>[] = [];
 
   if (presets.length > 0) {
@@ -214,15 +220,24 @@ function lotteryTicketRows(config: Config, balance: number): ActionRowBuilder<Bu
     );
   }
 
-  rows.push(
-    new ActionRowBuilder<ButtonBuilder>().addComponents(
+  const actionRow = new ActionRowBuilder<ButtonBuilder>();
+  if (maxTickets >= 1) {
+    actionRow.addComponents(
       new ButtonBuilder()
-        .setCustomId(buildButtonId("casino", "lot", "status"))
-        .setLabel("View Status")
+        .setCustomId(buildButtonId("casino", "lot", "custom"))
+        .setLabel("Custom Amount")
         .setStyle(ButtonStyle.Secondary)
-        .setEmoji("📊"),
-    ),
+        .setEmoji("✏️"),
+    );
+  }
+  actionRow.addComponents(
+    new ButtonBuilder()
+      .setCustomId(buildButtonId("casino", "lot", "status"))
+      .setLabel("View Status")
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji("📊"),
   );
+  rows.push(actionRow);
 
   return rows;
 }
@@ -253,6 +268,79 @@ export async function handleCasinoLotteryPick(
 
 function msUntilDraw(scheduledDrawAt: Date): number {
   return Math.max(0, scheduledDrawAt.getTime() - Date.now());
+}
+
+export async function handleCasinoLotteryCustomPrompt(
+  interaction: ButtonInteraction,
+  config: Config,
+) {
+  assertGuild(interaction);
+  await interaction.showModal(customLotteryTicketModal(config));
+}
+
+export async function handleCasinoLotteryCustomModal(
+  interaction: ModalSubmitInteraction,
+  wallet: WalletService,
+  lottery: LotteryService,
+  config: Config,
+) {
+  const guildId = assertGuild(interaction);
+
+  try {
+    const userWallet = await wallet.getOrCreateWallet(guildId, interaction.user.id);
+    const count = parseLotteryTicketCount(
+      interaction.fields.getTextInputValue("count"),
+      config,
+      userWallet.balance,
+    );
+
+    await interaction.deferReply(ephemeralOptions({}));
+
+    const { round, tickets, balance } = await lottery.buyTickets(
+      guildId,
+      interaction.user.id,
+      interaction.channelId,
+      count,
+    );
+
+    const ticketNumbers = tickets.map((t) => t.ticketNumber).join(", ");
+    const totalCost = count * config.LOTTERY_TICKET_PRICE;
+
+    await interaction.editReply({
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0xf1c40f)
+          .setTitle("Lottery Tickets Purchased")
+          .setDescription(
+            `You bought **${count}** ticket${count === 1 ? "" : "s"} for **${formatCurrency(totalCost, config)}**.\n` +
+              `Ticket number${count === 1 ? "" : "s"}: **${ticketNumbers}**\n` +
+              `Round **#${round.roundNumber}** · Pot: **${formatCurrency(round.potAmount, config)}** ` +
+              `(${round.ticketCount} tickets)\n` +
+              `Draw in **${formatDuration(msUntilDraw(round.scheduledDrawAt))}**\n` +
+              `Balance: **${formatCurrency(balance, config)}**`,
+          )
+          .setFooter({
+            text: `${config.LOTTERY_RAKE_PERCENT}% house fee · Draw every ${config.LOTTERY_DRAW_INTERVAL_DAYS} days`,
+          }),
+      ],
+      components: [],
+    });
+  } catch (err) {
+    if (
+      err instanceof LotteryInsufficientFundsError ||
+      err instanceof LotteryError ||
+      err instanceof Error
+    ) {
+      const payload = ephemeralOptions({ content: err.message });
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply(payload);
+      } else {
+        await interaction.reply(payload);
+      }
+      return;
+    }
+    throw err;
+  }
 }
 
 export async function handleCasinoLotteryBuy(
@@ -533,26 +621,24 @@ export async function handleCasinoCoinflipSide(
 
   try {
     const amount = parseWagerAmount(amountStr, config);
-    const result = await playCoinflip(wallet, guildId, interaction.user.id, amount, side);
-    await interaction.update({
-      content: null,
-      embeds: [
-        new EmbedBuilder()
-          .setColor(result.won ? 0x57f287 : 0xed4245)
-          .setTitle(result.won ? "Coinflip — You Won!" : "Coinflip — You Lost")
-          .setDescription(
-            `Your pick: **${side}**\nResult: **${result.result}**\nWager: **${formatCurrency(result.wager, config)}**\n${
-              result.won
-                ? `Payout: **${formatCurrency(result.payout, config)}**`
-                : `Lost: **${formatCurrency(result.wager, config)}**`
-            }\nNew balance: **${formatCurrency(result.balance, config)}**.`,
-          ),
-      ],
-      components: [],
-    });
+    await interaction.deferUpdate();
+    await runCoinflipAnimation(
+      (p) => interaction.editReply({ ...p, content: null, components: [] }),
+      wallet,
+      guildId,
+      interaction.user.id,
+      amount,
+      side,
+      config,
+    );
   } catch (err) {
     if (err instanceof BetValidationError || err instanceof InsufficientFundsError) {
-      await interaction.reply({ content: err.message, ephemeral: true });
+      const payload = { content: err.message, embeds: [], components: [] as [] };
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply(payload);
+      } else {
+        await interaction.reply({ content: err.message, ephemeral: true });
+      }
       return;
     }
     throw err;

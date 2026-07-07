@@ -16,8 +16,36 @@ export function lotteryTicketDescription(config: Config, balance: number): strin
   return (
     `Tickets cost **${formatCurrency(price, config)}** each.\n` +
     `You can buy up to **${maxTickets}** ticket${maxTickets === 1 ? "" : "s"} right now.\n` +
-    `Use **Status** to view the current round, or **/lottery buy** for larger purchases.`
+    `Use a preset below or **Custom Amount** to choose how many to buy.`
   );
+}
+
+export function parseLotteryTicketCount(
+  raw: string,
+  config: Config,
+  balance: number,
+): number {
+  const count = Number.parseInt(raw.trim(), 10);
+  if (Number.isNaN(count) || count < 1) {
+    throw new Error("Enter a whole number of tickets (at least 1).");
+  }
+
+  const maxTickets = Math.min(
+    Math.floor(balance / config.LOTTERY_TICKET_PRICE),
+    config.LOTTERY_MAX_TICKETS_PER_PURCHASE,
+  );
+
+  if (maxTickets < 1) {
+    throw new Error("You cannot afford any tickets right now.");
+  }
+
+  if (count > maxTickets) {
+    throw new Error(
+      `You can buy at most **${maxTickets}** ticket${maxTickets === 1 ? "" : "s"} right now.`,
+    );
+  }
+
+  return count;
 }
 
 export function getLotteryTicketPresets(config: Config, balance: number): number[] {

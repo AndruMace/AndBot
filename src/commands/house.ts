@@ -11,7 +11,8 @@ import type { Config } from "../config";
 import type { WalletService } from "../services/wallet";
 import type { BlackjackSessionService } from "../services/blackjack/session";
 import { BlackjackSessionError } from "../services/blackjack/session";
-import { playCoinflip, type CoinSide } from "../services/coinflip";
+import { type CoinSide } from "../services/coinflip";
+import { runCoinflipAnimation } from "./casino/presentations";
 import { InsufficientFundsError } from "../services/wallet";
 import { assertGuild } from "../utils/permissions";
 import { BetValidationError, formatCurrency, validateBetAmount } from "../utils/bets";
@@ -38,23 +39,23 @@ export async function handleCoinflip(
 
   try {
     validateBetAmount(amount, config);
-    const result = await playCoinflip(wallet, guildId, interaction.user.id, amount, side);
-
-    await interaction.reply({
-      embeds: [
-        gameEmbed(
-          result.won ? "Coinflip — You Won!" : "Coinflip — You Lost",
-          `Your pick: **${side}**\nResult: **${result.result}**\nWager: **${formatCurrency(result.wager, config)}**\n${
-            result.won
-              ? `Payout: **${formatCurrency(result.payout, config)}**`
-              : `Lost: **${formatCurrency(result.wager, config)}**`
-          }\nNew balance: **${formatCurrency(result.balance, config)}**.`,
-        ),
-      ],
-    });
+    await interaction.deferReply();
+    await runCoinflipAnimation(
+      (p) => interaction.editReply(p),
+      wallet,
+      guildId,
+      interaction.user.id,
+      amount,
+      side,
+      config,
+    );
   } catch (err) {
     if (err instanceof BetValidationError || err instanceof InsufficientFundsError) {
-      await interaction.reply({ content: err.message, ephemeral: true });
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply({ content: err.message, embeds: [] });
+      } else {
+        await interaction.reply({ content: err.message, ephemeral: true });
+      }
       return;
     }
     throw err;

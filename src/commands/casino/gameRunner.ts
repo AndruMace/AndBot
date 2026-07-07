@@ -5,7 +5,8 @@ import type { BlackjackSessionService } from "../../services/blackjack/session";
 import { runBlackjackWithWager } from "../house";
 import { spinSlots, formatReels, calculateSlotsPayout, buildSlotsFrames, renderSlotsFrame, sleep, SLOTS_FRAME_DELAY_MS } from "../../services/casino/slots";
 import { drawCard } from "../../services/casino/hilo";
-import { rollLuckyNumber, calculateLuckyPayout } from "../../services/casino/lucky";
+import { rollLuckyNumber } from "../../services/casino/lucky";
+import { runLuckyAnimation } from "./presentations";
 import {
   dropPlinkoIndex,
   calculatePlinkoPayout,
@@ -211,38 +212,29 @@ export async function executeCasinoGame(
 
     case "lucky": {
       if (luckyPick == null) throw new Error("Lucky number required.");
-      await wallet.debit(guildId, userId, amount, "lucky_bet", undefined, { pick: luckyPick });
-      const roll = rollLuckyNumber();
-      const { payout, description } = calculateLuckyPayout(amount, luckyPick, roll);
-      let balance: number;
-      if (payout > 0) {
-        balance = await wallet.credit(guildId, userId, payout, "lucky_win", undefined, {
-          pick: luckyPick,
-          roll,
-        });
-      } else {
-        balance = await wallet.getBalance(guildId, userId);
-      }
-
-      const payload = {
-        embeds: [
-          new EmbedBuilder()
-            .setColor(payout > 0 ? 0x57f287 : 0xed4245)
-            .setTitle(payout > 0 ? "Lucky Number — Winner!" : "Lucky Number — Miss")
-            .setDescription(
-              `Your pick: **${luckyPick}** · Rolled: **${roll}**\n${description}\n` +
-                `Wager: **${formatCurrency(amount, config)}**` +
-                (payout > 0 ? `\nPayout: **${formatCurrency(payout, config)}**` : "") +
-                `\nBalance: **${formatCurrency(balance, config)}**`,
-            ),
-        ],
-        components: [] as [],
-      };
 
       if (interaction.isButton()) {
-        await interaction.update(payload);
+        await interaction.deferUpdate();
+        await runLuckyAnimation(
+          (p) => interaction.editReply({ ...p, components: [] }),
+          wallet,
+          guildId,
+          userId,
+          amount,
+          luckyPick,
+          config,
+        );
       } else {
-        await interaction.reply(payload);
+        await interaction.deferReply({ ephemeral: true });
+        await runLuckyAnimation(
+          (p) => interaction.editReply({ ...p, components: [] }),
+          wallet,
+          guildId,
+          userId,
+          amount,
+          luckyPick,
+          config,
+        );
       }
       return;
     }

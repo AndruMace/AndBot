@@ -2,6 +2,10 @@ import type { WalletService } from "./wallet";
 
 export type CoinSide = "heads" | "tails";
 
+export function flipCoin(): CoinSide {
+  return crypto.getRandomValues(new Uint32Array(1))[0]! % 2 === 0 ? "heads" : "tails";
+}
+
 export interface CoinflipResult {
   side: CoinSide;
   result: CoinSide;
@@ -20,7 +24,7 @@ export async function playCoinflip(
 ): Promise<CoinflipResult> {
   await wallet.debit(guildId, userId, wager, "coinflip_bet", undefined, { side });
 
-  const result: CoinSide = crypto.getRandomValues(new Uint32Array(1))[0]! % 2 === 0 ? "heads" : "tails";
+  const result = flipCoin();
   const won = result === side;
 
   let balance: number;

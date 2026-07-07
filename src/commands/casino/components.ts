@@ -186,3 +186,21 @@ export function customLuckyNumberModal(amount: number): ModalBuilder {
       ),
     );
 }
+
+export function customLotteryTicketModal(config: Config): ModalBuilder {
+  return new ModalBuilder()
+    .setCustomId(buildButtonId("casino", "modal", "lot"))
+    .setTitle("Buy Lottery Tickets")
+    .addComponents(
+      new ActionRowBuilder<TextInputBuilder>().addComponents(
+        new TextInputBuilder()
+          .setCustomId("count")
+          .setLabel("Number of tickets")
+          .setStyle(TextInputStyle.Short)
+          .setPlaceholder(`1–${config.LOTTERY_MAX_TICKETS_PER_PURCHASE}`)
+          .setRequired(true)
+          .setMinLength(1)
+          .setMaxLength(3),
+      ),
+    );
+}

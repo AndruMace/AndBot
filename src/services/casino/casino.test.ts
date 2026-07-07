@@ -2,6 +2,12 @@ import { describe, expect, test } from "bun:test";
 import { calculateSlotsPayout, spinSlots, buildSlotsFrames, renderSlotsFrame, SLOTS_SPIN_TICKS } from "./slots";
 import { resolveHiLo } from "./hilo";
 import { calculateLuckyPayout } from "./lucky";
+import {
+  buildCoinflipFrames,
+  renderCoinflipResultFrame,
+  renderCoinflipSpinFrame,
+} from "./coinflipAnim";
+import { buildLuckyFrames, renderLuckyFrame } from "./luckyAnim";
 import { calculatePlinkoPayout, dropPlinko, generatePlinkoPath, renderPlinkoFrame, PLINKO_BUCKETS, PLINKO_PEG_ROWS, PLINKO_COL_WIDTH } from "./plinko";
 import { gemMultiplier, generateMinePositions, calculateMinesPayout } from "./mines/engine";
 
@@ -57,6 +63,36 @@ describe("lucky number", () => {
 
   test("far miss pays nothing", () => {
     expect(calculateLuckyPayout(100, 1, 100).payout).toBe(0);
+  });
+
+  test("animation ends on final roll", () => {
+    const frames = buildLuckyFrames(42, 5);
+    expect(frames).toHaveLength(6);
+    expect(frames[frames.length - 1]).toBe(42);
+  });
+
+  test("render produces code block", () => {
+    const frame = renderLuckyFrame(42, 7, true);
+    expect(frame).toContain("```");
+    expect(frame).toContain("42");
+    expect(frame).toContain("Rolling");
+  });
+});
+
+describe("coinflip animation", () => {
+  test("animation ends on final side", () => {
+    const frames = buildCoinflipFrames("tails");
+    expect(frames[frames.length - 1]).toBe(renderCoinflipResultFrame("tails"));
+  });
+
+  test("spin frames show flipping text", () => {
+    const frame = renderCoinflipSpinFrame("🪙");
+    expect(frame).toContain("Flipping");
+    expect(frame).toContain("```");
+  });
+
+  test("result frame shows side", () => {
+    expect(renderCoinflipResultFrame("heads")).toContain("HEADS");
   });
 });
 

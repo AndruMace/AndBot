@@ -39,6 +39,8 @@ import {
   handleCasinoLotteryPick,
   handleCasinoLotteryBuy,
   handleCasinoLotteryStatus,
+  handleCasinoLotteryCustomPrompt,
+  handleCasinoLotteryCustomModal,
   isCasinoGame,
 } from "../commands/casino";
 import {
@@ -246,6 +248,11 @@ export function registerInteractionHandler(client: Client, db: Database, config:
             return;
           }
 
+          if (action === "lot" && sub === "custom") {
+            await handleCasinoLotteryCustomPrompt(interaction, config);
+            return;
+          }
+
           if (action === "lot" && sub === "buy" && rest[0]) {
             await handleCasinoLotteryBuy(
               interaction,
@@ -440,6 +447,16 @@ export function registerInteractionHandler(client: Client, db: Database, config:
               blackjack,
               config,
             );
+            return;
+          }
+          if (casinoParts[1] === "lot") {
+            await handleCasinoLotteryCustomModal(
+              interaction,
+              wallet,
+              lottery,
+              config,
+            );
+            return;
           }
         }
       }
