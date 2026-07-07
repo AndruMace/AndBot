@@ -682,7 +682,12 @@ export async function handleCasinoKenoQuickPick(
       err instanceof KenoPickError ||
       err instanceof Error
     ) {
-      await interaction.reply({ content: err.message, ephemeral: true });
+      const payload = ephemeralOptions({ content: err.message });
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply(payload);
+      } else {
+        await interaction.reply(payload);
+      }
       return;
     }
     throw err;
@@ -719,7 +724,12 @@ export async function handleCasinoKenoCustomModal(
       err instanceof KenoPickError ||
       err instanceof Error
     ) {
-      await interaction.reply({ content: err.message, ephemeral: true });
+      const payload = ephemeralOptions({ content: err.message });
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply(payload);
+      } else {
+        await interaction.reply(payload);
+      }
       return;
     }
     throw err;
