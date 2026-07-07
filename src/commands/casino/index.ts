@@ -5,6 +5,7 @@ export {
 } from "./publicMessage";
 export {
   handleCasino,
+  handleCasinoMenuButton,
   handleCasinoPick,
   handleCasinoCustomWager,
   handleCasinoWagerBet,

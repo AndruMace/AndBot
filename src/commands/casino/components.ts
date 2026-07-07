@@ -8,14 +8,92 @@ import {
 } from "discord.js";
 import { buildButtonId } from "../../utils/buttons";
 import type { Config } from "../../config";
-import type { CasinoGame } from "./types";
+import { CASINO_GAMES, type CasinoGame } from "./types";
+import { LOTTERY_MENU } from "./lottery-menu";
 import {
   formatWagerButtonLabel,
   getMaxAffordableWager,
   getWagerPresets,
   wagerSelectionDescription,
 } from "./wagers";
+import { formatCurrency } from "../../utils/bets";
 import { EmbedBuilder } from "discord.js";
+
+export function casinoMenuEmbed(config: Config): EmbedBuilder {
+  const fields = [
+    ...CASINO_GAMES.map((g) => ({
+      name: `${g.emoji} ${g.label}`,
+      value: g.description,
+      inline: true,
+    })),
+    {
+      name: `${LOTTERY_MENU.emoji} ${LOTTERY_MENU.label}`,
+      value: LOTTERY_MENU.description,
+      inline: true,
+    },
+  ];
+
+  return new EmbedBuilder()
+    .setColor(0x9b59b6)
+    .setTitle("Casino")
+    .setDescription("Pick a game below, then choose a wager amount with one click.")
+    .addFields(fields)
+    .setFooter({
+      text: `Wagers: ${formatCurrency(config.MIN_BET, config)} – ${formatCurrency(config.MAX_BET, config)}`,
+    });
+}
+
+export function casinoMenuRows(): ActionRowBuilder<ButtonBuilder>[] {
+  const menuItems = [
+    ...CASINO_GAMES.map((g) => ({ id: g.id, label: g.label, emoji: g.emoji, kind: "game" as const })),
+    {
+      id: LOTTERY_MENU.id,
+      label: LOTTERY_MENU.label,
+      emoji: LOTTERY_MENU.emoji,
+      kind: "lottery" as const,
+    },
+  ];
+
+  const rows: ActionRowBuilder<ButtonBuilder>[] = [];
+  for (let i = 0; i < menuItems.length; i += 4) {
+    const chunk = menuItems.slice(i, i + 4);
+    rows.push(
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        ...chunk.map((item) =>
+          new ButtonBuilder()
+            .setCustomId(
+              item.kind === "lottery"
+                ? buildButtonId("casino", "pick", "lottery")
+                : buildButtonId("casino", "pick", item.id),
+            )
+            .setLabel(item.label)
+            .setStyle(ButtonStyle.Primary)
+            .setEmoji(item.emoji),
+        ),
+      ),
+    );
+  }
+  return rows;
+}
+
+export function casinoPostGameRow(game: CasinoGame): ActionRowBuilder<ButtonBuilder> {
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId(buildButtonId("casino", "again", game))
+      .setLabel("Play Again")
+      .setStyle(ButtonStyle.Primary)
+      .setEmoji("🔁"),
+    new ButtonBuilder()
+      .setCustomId(buildButtonId("casino", "menu"))
+      .setLabel("Casino Menu")
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji("🎰"),
+  );
+}
+
+export function casinoPostGameComponents(game: CasinoGame): ActionRowBuilder<ButtonBuilder>[] {
+  return [casinoPostGameRow(game)];
+}
 
 export function coinflipSideRow(userId: string, amount: number): ActionRowBuilder<ButtonBuilder> {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(

@@ -14,6 +14,7 @@ import { BlackjackSessionError } from "../services/blackjack/session";
 import { type CoinSide } from "../services/coinflip";
 import { runCoinflipAnimation } from "./casino/presentations";
 import { postPublicGameMessage, buildGameHeader, prefixDescription, type SetupInteraction } from "./casino/publicMessage";
+import { casinoPostGameComponents } from "./casino/components";
 import { InsufficientFundsError } from "../services/wallet";
 import { assertGuild } from "../utils/permissions";
 import { BetValidationError, formatCurrency, validateBetAmount } from "../utils/bets";
@@ -102,7 +103,7 @@ function buildBlackjackComponents(
   canDouble: boolean,
   finished: boolean,
 ): ActionRowBuilder<ButtonBuilder>[] {
-  if (finished) return [];
+  if (finished) return casinoPostGameComponents("blackjack");
 
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()

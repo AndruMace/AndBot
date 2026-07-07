@@ -24,6 +24,7 @@ import { handleHelp } from "../commands/help";
 import { handleLeaderboard } from "../commands/leaderboard";
 import {
   handleCasino,
+  handleCasinoMenuButton,
   handleCasinoPick,
   handleCasinoCustomWager,
   handleCasinoWagerBet,
@@ -260,6 +261,16 @@ export function registerInteractionHandler(client: Client, db: Database, config:
 
           if (action === "pick" && sub === "lottery") {
             await handleCasinoLotteryPick(interaction, wallet, config);
+            return;
+          }
+
+          if (action === "again" && isCasinoGame(sub!)) {
+            await handleCasinoPick(interaction, sub!, wallet, config);
+            return;
+          }
+
+          if (action === "menu") {
+            await handleCasinoMenuButton(interaction, config);
             return;
           }
 

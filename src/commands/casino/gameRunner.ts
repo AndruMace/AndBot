@@ -25,7 +25,7 @@ import {
 } from "../../services/casino/plinko";
 import { formatCurrency } from "../../utils/bets";
 import { getCasinoGameLabel, type CasinoGame } from "./types";
-import { coinflipSideRow, hiloChoiceRow, minesCountRow, luckyNumberRows } from "./components";
+import { coinflipSideRow, hiloChoiceRow, minesCountRow, luckyNumberRows, casinoPostGameComponents } from "./components";
 import {
   buildGameHeader,
   postPublicGameMessage,
@@ -115,7 +115,7 @@ async function runSlotsAnimation(
         .setTitle(payout > 0 ? "Slots — Winner!" : "Slots — No Luck")
         .setDescription(describePublic(userId, "slots", amount, config, body)),
     ],
-    components: [],
+    components: casinoPostGameComponents("slots"),
   });
 }
 
@@ -165,7 +165,7 @@ async function runPlinkoAnimation(
         .setTitle("Plinko — Result")
         .setDescription(describePublic(userId, "plinko", amount, config, body)),
     ],
-    components: [],
+    components: casinoPostGameComponents("plinko"),
   });
 }
 

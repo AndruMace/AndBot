@@ -1,4 +1,4 @@
-import { EmbedBuilder } from "discord.js";
+import { EmbedBuilder, type ActionRowBuilder, type ButtonBuilder } from "discord.js";
 import type { Config } from "../../config";
 import type { WalletService } from "../../services/wallet";
 import { flipCoin, type CoinSide } from "../../services/coinflip";
@@ -21,10 +21,11 @@ import {
   prefixDescription,
   publicResultFooter,
 } from "./publicMessage";
+import { casinoPostGameComponents } from "./components";
 
 export type PresentationEdit = (payload: {
   embeds: EmbedBuilder[];
-  components?: [];
+  components?: ActionRowBuilder<ButtonBuilder>[];
   content?: string | null;
 }) => Promise<unknown>;
 
@@ -140,7 +141,7 @@ export async function runCoinflipAnimation(
         .setTitle(won ? "Coinflip — You Won!" : "Coinflip — You Lost")
         .setDescription(describePublic(ctx, body)),
     ],
-    components: [],
+    components: casinoPostGameComponents("coinflip"),
   });
 }
 
@@ -195,6 +196,6 @@ export async function runLuckyAnimation(
         .setTitle(payout > 0 ? "Lucky Number — Winner!" : "Lucky Number — Miss")
         .setDescription(describePublic(ctx, body)),
     ],
-    components: [],
+    components: casinoPostGameComponents("lucky"),
   });
 }

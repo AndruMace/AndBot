@@ -45,6 +45,9 @@ import {
   wagerSelectionEmbed,
   wagerSelectionRows,
   customLotteryTicketModal,
+  casinoMenuEmbed,
+  casinoMenuRows,
+  casinoPostGameComponents,
 } from "./components";
 import {
   executeCasinoGame,
@@ -65,63 +68,6 @@ import {
   resolveWagerAmount,
   parseCustomWagerAmount,
 } from "./wagers";
-
-function casinoEmbed(config: Config): EmbedBuilder {
-  const fields = [
-    ...CASINO_GAMES.map((g) => ({
-      name: `${g.emoji} ${g.label}`,
-      value: g.description,
-      inline: true,
-    })),
-    {
-      name: `${LOTTERY_MENU.emoji} ${LOTTERY_MENU.label}`,
-      value: LOTTERY_MENU.description,
-      inline: true,
-    },
-  ];
-
-  return new EmbedBuilder()
-    .setColor(0x9b59b6)
-    .setTitle("Casino")
-    .setDescription("Pick a game below, then choose a wager amount with one click.")
-    .addFields(fields)
-    .setFooter({
-      text: `Wagers: ${formatCurrency(config.MIN_BET, config)} – ${formatCurrency(config.MAX_BET, config)}`,
-    });
-}
-
-function casinoGameRows(): ActionRowBuilder<ButtonBuilder>[] {
-  const menuItems = [
-    ...CASINO_GAMES.map((g) => ({ id: g.id, label: g.label, emoji: g.emoji, kind: "game" as const })),
-    {
-      id: LOTTERY_MENU.id,
-      label: LOTTERY_MENU.label,
-      emoji: LOTTERY_MENU.emoji,
-      kind: "lottery" as const,
-    },
-  ];
-
-  const rows: ActionRowBuilder<ButtonBuilder>[] = [];
-  for (let i = 0; i < menuItems.length; i += 4) {
-    const chunk = menuItems.slice(i, i + 4);
-    rows.push(
-      new ActionRowBuilder<ButtonBuilder>().addComponents(
-        ...chunk.map((item) =>
-          new ButtonBuilder()
-            .setCustomId(
-              item.kind === "lottery"
-                ? buildButtonId("casino", "pick", "lottery")
-                : buildButtonId("casino", "pick", item.id),
-            )
-            .setLabel(item.label)
-            .setStyle(ButtonStyle.Primary)
-            .setEmoji(item.emoji),
-        ),
-      ),
-    );
-  }
-  return rows;
-}
 
 function buildMinesEmbed(
   session: MinesSession,
@@ -213,8 +159,21 @@ export async function handleCasino(
 ) {
   assertGuild(interaction);
   await interaction.reply({
-    embeds: [casinoEmbed(config)],
-    components: casinoGameRows(),
+    embeds: [casinoMenuEmbed(config)],
+    components: casinoMenuRows(),
+  });
+}
+
+export async function handleCasinoMenuButton(
+  interaction: ButtonInteraction,
+  config: Config,
+) {
+  assertGuild(interaction);
+  await interaction.reply({
+    ...ephemeralOptions({
+      embeds: [casinoMenuEmbed(config)],
+      components: casinoMenuRows(),
+    }),
   });
 }
 
@@ -697,7 +656,7 @@ export async function handleCasinoCoinflipSide(
     const amount = parseWagerAmount(amountStr, config);
     await interaction.deferUpdate();
     await runCoinflipAnimation(
-      (p) => interaction.editReply({ ...p, content: null, components: [] }),
+      (p) => interaction.editReply({ ...p, content: null, components: p.components ?? [] }),
       wallet,
       guildId,
       interaction.user.id,
@@ -782,7 +741,7 @@ export async function handleCasinoHiLo(
             ),
           ),
       ],
-      components: [],
+      components: casinoPostGameComponents("hilo"),
     });
 
     await interaction.followUp(
@@ -900,7 +859,7 @@ export async function handleCasinoMinesReveal(
             updated.userId,
           ),
         ],
-        components: buildMinesComponents(updated),
+        components: [...buildMinesComponents(updated), ...casinoPostGameComponents("mines")],
       });
       return;
     }
@@ -950,7 +909,7 @@ export async function handleCasinoMinesCashout(
           updated.userId,
         ),
       ],
-      components: buildMinesComponents(updated),
+      components: [...buildMinesComponents(updated), ...casinoPostGameComponents("mines")],
     });
 
     await interaction.followUp(
