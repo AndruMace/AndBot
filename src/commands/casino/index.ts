@@ -1,4 +1,9 @@
 export {
+  buildGameHeader,
+  buildLotteryPublicDescription,
+  publicResultFooter,
+} from "./publicMessage";
+export {
   handleCasino,
   handleCasinoPick,
   handleCasinoCustomWager,

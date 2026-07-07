@@ -34,6 +34,10 @@ export function parseWagerAmount(raw: string, config: Config): number {
   return amount;
 }
 
+export function getCasinoGameLabel(game: CasinoGame): string {
+  return CASINO_GAMES.find((g) => g.id === game)?.label ?? game;
+}
+
 export function parseLuckyPick(raw: string): number {
   const pick = Number.parseInt(raw.trim(), 10);
   if (Number.isNaN(pick) || pick < 1 || pick > 100) {

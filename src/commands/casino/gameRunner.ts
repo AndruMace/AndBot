@@ -3,24 +3,66 @@ import type { Config } from "../../config";
 import type { WalletService } from "../../services/wallet";
 import type { BlackjackSessionService } from "../../services/blackjack/session";
 import { runBlackjackWithWager } from "../house";
-import { spinSlots, formatReels, calculateSlotsPayout, buildSlotsFrames, renderSlotsFrame, sleep, SLOTS_FRAME_DELAY_MS } from "../../services/casino/slots";
+import {
+  spinSlots,
+  formatReels,
+  calculateSlotsPayout,
+  buildSlotsFrames,
+  renderSlotsFrame,
+  sleep,
+  SLOTS_FRAME_DELAY_MS,
+} from "../../services/casino/slots";
 import { drawCard } from "../../services/casino/hilo";
 import { rollLuckyNumber } from "../../services/casino/lucky";
-import { runLuckyAnimation } from "./presentations";
+import { runLuckyAnimation, type PresentationContext } from "./presentations";
 import {
   dropPlinkoIndex,
   calculatePlinkoPayout,
   generatePlinkoPath,
   renderPlinkoFrame,
-  sleep,
   PLINKO_BUCKETS,
   PLINKO_FRAME_DELAY_MS,
 } from "../../services/casino/plinko";
 import { formatCurrency } from "../../utils/bets";
-import type { CasinoGame } from "./types";
+import { getCasinoGameLabel } from "./types";
 import { coinflipSideRow, hiloChoiceRow, minesCountRow, luckyNumberRows } from "./components";
+import {
+  buildGameHeader,
+  postPublicGameMessage,
+  prefixDescription,
+  publicResultFooter,
+  type PublicMessageEdit,
+} from "./publicMessage";
 
 type GameInteraction = ButtonInteraction | ModalSubmitInteraction;
+
+function presentationContext(
+  userId: string,
+  game: CasinoGame,
+  wager: number,
+  config: Config,
+): PresentationContext {
+  return {
+    isPublic: true,
+    userId,
+    gameLabel: getCasinoGameLabel(game),
+    wager,
+    config,
+  };
+}
+
+function describePublic(
+  userId: string,
+  game: CasinoGame,
+  wager: number,
+  config: Config,
+  body: string,
+): string {
+  return prefixDescription(
+    buildGameHeader(userId, getCasinoGameLabel(game), wager, config),
+    body,
+  );
+}
 
 export async function recordCasinoWager(
   wallet: WalletService,
@@ -32,7 +74,7 @@ export async function recordCasinoWager(
 }
 
 async function runSlotsAnimation(
-  edit: (payload: { embeds: EmbedBuilder[] }) => Promise<unknown>,
+  edit: PublicMessageEdit,
   guildId: string,
   userId: string,
   amount: number,
@@ -45,43 +87,40 @@ async function runSlotsAnimation(
 
   for (let step = 0; step < frames.length; step++) {
     const spinning = step < frames.length - 1;
+    const body = `${renderSlotsFrame(frames[step]!)}${spinning ? "\n*Spinning...*" : ""}`;
     await edit({
       embeds: [
         new EmbedBuilder()
           .setColor(0xe67e22)
           .setTitle("Slots")
-          .setDescription(
-            `${renderSlotsFrame(frames[step]!)}${spinning ? "\n*Spinning...*" : ""}`,
-          ),
+          .setDescription(describePublic(userId, "slots", amount, config, body)),
       ],
     });
     if (spinning) await sleep(SLOTS_FRAME_DELAY_MS);
   }
 
   const { payout, description } = calculateSlotsPayout(reels, amount);
-  let balance: number;
   if (payout > 0) {
-    balance = await wallet.credit(guildId, userId, payout, "slots_win", undefined, { reels });
-  } else {
-    balance = await wallet.getBalance(guildId, userId);
+    await wallet.credit(guildId, userId, payout, "slots_win", undefined, { reels });
   }
+
+  const body =
+    `${formatReels(reels)}\n\n${description}\n` +
+    publicResultFooter(amount, payout, config);
 
   await edit({
     embeds: [
       new EmbedBuilder()
         .setColor(payout > 0 ? 0x57f287 : 0xed4245)
         .setTitle(payout > 0 ? "Slots — Winner!" : "Slots — No Luck")
-        .setDescription(
-          `${formatReels(reels)}\n\n${description}\nWager: **${formatCurrency(amount, config)}**` +
-            (payout > 0 ? `\nPayout: **${formatCurrency(payout, config)}**` : "") +
-            `\nBalance: **${formatCurrency(balance, config)}**`,
-        ),
+        .setDescription(describePublic(userId, "slots", amount, config, body)),
     ],
+    components: [],
   });
 }
 
 async function runPlinkoAnimation(
-  edit: (payload: { embeds: EmbedBuilder[] }) => Promise<unknown>,
+  edit: PublicMessageEdit,
   guildId: string,
   userId: string,
   amount: number,
@@ -95,42 +134,38 @@ async function runPlinkoAnimation(
 
   for (let step = 0; step < path.length; step++) {
     const dropping = step < path.length - 1;
+    const body = `${renderPlinkoFrame(path, step)}${dropping ? "\n*Dropping...*" : ""}`;
     await edit({
       embeds: [
         new EmbedBuilder()
           .setColor(0x9b59b6)
           .setTitle("Plinko")
-          .setDescription(
-            `${renderPlinkoFrame(path, step)}${dropping ? "\n*Dropping...*" : ""}`,
-          ),
+          .setDescription(describePublic(userId, "plinko", amount, config, body)),
       ],
     });
     if (dropping) await sleep(PLINKO_FRAME_DELAY_MS);
   }
 
   const payout = calculatePlinkoPayout(amount, bucket);
-  let balance: number;
   if (payout > 0) {
-    balance = await wallet.credit(guildId, userId, payout, "plinko_win", undefined, {
+    await wallet.credit(guildId, userId, payout, "plinko_win", undefined, {
       bucket: bucket.label,
     });
-  } else {
-    balance = await wallet.getBalance(guildId, userId);
   }
+
+  const body =
+    `${renderPlinkoFrame(path, path.length - 1)}\n` +
+    `Landed in **${bucket.label}**!\n` +
+    publicResultFooter(amount, payout, config);
 
   await edit({
     embeds: [
       new EmbedBuilder()
         .setColor(payout >= amount ? 0x57f287 : 0xf1c40f)
         .setTitle("Plinko — Result")
-        .setDescription(
-          `${renderPlinkoFrame(path, path.length - 1)}\n` +
-            `Landed in **${bucket.label}**!\n` +
-            `Wager: **${formatCurrency(amount, config)}**\n` +
-            `Payout: **${formatCurrency(payout, config)}**\n` +
-            `Balance: **${formatCurrency(balance, config)}**`,
-        ),
+        .setDescription(describePublic(userId, "plinko", amount, config, body)),
     ],
+    components: [],
   });
 }
 
@@ -149,93 +184,72 @@ export async function executeCasinoGame(
   await recordCasinoWager(wallet, guildId, userId, amount);
 
   switch (game) {
-    case "coinflip":
-      if (interaction.isButton()) {
-        await interaction.update({
-          content: `Wager: **${formatCurrency(amount, config)}** — pick heads or tails:`,
-          embeds: [],
-          components: [coinflipSideRow(userId, amount)],
-        });
-      } else {
-        await interaction.reply({
-          content: `Wager: **${formatCurrency(amount, config)}** — pick heads or tails:`,
-          components: [coinflipSideRow(userId, amount)],
-          ephemeral: true,
-        });
-      }
+    case "coinflip": {
+      const embed = new EmbedBuilder()
+        .setColor(0xf1c40f)
+        .setTitle("Coinflip")
+        .setDescription(
+          describePublic(userId, game, amount, config, "Pick heads or tails:"),
+        );
+      await postPublicGameMessage(interaction, {
+        embeds: [embed],
+        components: [coinflipSideRow(userId, amount)],
+      });
       return;
+    }
 
     case "blackjack":
-      if (interaction.isButton()) {
-        await interaction.deferReply({ ephemeral: false });
-      }
-      await runBlackjackWithWager(interaction, wallet, blackjack, config, amount);
+      await runBlackjackWithWager(interaction, wallet, blackjack, config, amount, {
+        publishMode: "channel",
+      });
       return;
 
     case "slots": {
-      if (!interaction.deferred && !interaction.replied) {
-        await interaction.deferReply({ ephemeral: false });
-      }
-      await runSlotsAnimation(
-        (p) => interaction.editReply(p),
-        guildId,
-        userId,
-        amount,
-        wallet,
-        config,
-      );
+      const { edit } = await postPublicGameMessage(interaction, {
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0xe67e22)
+            .setTitle("Slots")
+            .setDescription(
+              describePublic(userId, game, amount, config, "*Spinning...*"),
+            ),
+        ],
+      });
+      await runSlotsAnimation(edit, guildId, userId, amount, wallet, config);
       return;
     }
 
     case "hilo": {
       await wallet.debit(guildId, userId, amount, "hilo_bet");
       const card = drawCard();
-      const payload = {
+      const body =
+        `Current card: **${card.label}**\n\nWill the next card be higher or lower?`;
+      await postPublicGameMessage(interaction, {
         embeds: [
           new EmbedBuilder()
             .setColor(0x3498db)
             .setTitle("Hi-Lo")
-            .setDescription(
-              `Wager: **${formatCurrency(amount, config)}**\n\nCurrent card: **${card.label}**\n\nWill the next card be higher or lower?`,
-            ),
+            .setDescription(describePublic(userId, game, amount, config, body)),
         ],
         components: [hiloChoiceRow(userId, amount, card.rank)],
-      };
-
-      if (interaction.isButton()) {
-        await interaction.update(payload);
-      } else {
-        await interaction.reply({ ...payload, ephemeral: true });
-      }
+      });
       return;
     }
 
     case "lucky": {
       if (luckyPick == null) throw new Error("Lucky number required.");
-
-      if (interaction.isButton()) {
-        await interaction.deferUpdate();
-        await runLuckyAnimation(
-          (p) => interaction.editReply({ ...p, components: [] }),
-          wallet,
-          guildId,
-          userId,
-          amount,
-          luckyPick,
-          config,
-        );
-      } else {
-        await interaction.deferReply({ ephemeral: true });
-        await runLuckyAnimation(
-          (p) => interaction.editReply({ ...p, components: [] }),
-          wallet,
-          guildId,
-          userId,
-          amount,
-          luckyPick,
-          config,
-        );
-      }
+      const ctx = presentationContext(userId, game, amount, config);
+      const { edit } = await postPublicGameMessage(interaction, {
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0x9b59b6)
+            .setTitle("Lucky Number")
+            .setDescription(
+              describePublic(userId, game, amount, config, "*Rolling...*"),
+            ),
+        ],
+      });
+      await runLuckyAnimation(edit, wallet, guildId, userId, amount, luckyPick, config, ctx);
       return;
     }
 
@@ -254,17 +268,17 @@ export async function executeCasinoGame(
     }
 
     case "plinko": {
-      if (!interaction.deferred && !interaction.replied) {
-        await interaction.deferReply({ ephemeral: false });
-      }
-      await runPlinkoAnimation(
-        (p) => interaction.editReply(p),
-        guildId,
-        userId,
-        amount,
-        wallet,
-        config,
-      );
+      const { edit } = await postPublicGameMessage(interaction, {
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0x9b59b6)
+            .setTitle("Plinko")
+            .setDescription(
+              describePublic(userId, game, amount, config, "*Dropping...*"),
+            ),
+        ],
+      });
+      await runPlinkoAnimation(edit, guildId, userId, amount, wallet, config);
     }
   }
 }

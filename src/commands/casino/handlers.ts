@@ -17,6 +17,7 @@ import { LotteryError, InsufficientFundsError as LotteryInsufficientFundsError }
 import { MinesSessionError } from "../../services/casino/mines/session";
 import { BlackjackSessionError } from "../../services/blackjack/session";
 import { type CoinSide } from "../../services/coinflip";
+import { InsufficientFundsError } from "../../services/wallet";
 import { assertGuild } from "../../utils/permissions";
 import { BetValidationError, formatCurrency } from "../../utils/bets";
 import { buildButtonId } from "../../utils/buttons";
@@ -52,6 +53,14 @@ import {
   showLuckyNumberPicker,
 } from "./gameRunner";
 import { runCoinflipAnimation } from "./presentations";
+import {
+  buildGameHeader,
+  buildLotteryPublicDescription,
+  postLotteryPublicAnnouncement,
+  postPublicGameMessage,
+  prefixDescription,
+  publicResultFooter,
+} from "./publicMessage";
 import {
   resolveWagerAmount,
 } from "./wagers";
@@ -117,19 +126,28 @@ function buildMinesEmbed(
   session: MinesSession,
   config: Config,
   footer?: string,
+  userId?: string,
 ): EmbedBuilder {
   const mult = gemMultiplier(session.gemsFound);
   const potential = Math.floor(session.wager * mult);
 
+  let description = "";
+  if (userId) {
+    description =
+      buildGameHeader(userId, "Mines", session.wager, config) +
+      "\n\n";
+  }
+
+  description +=
+    `Wager: **${formatCurrency(session.wager, config)}** · Mines: **${session.mineCount}**\n` +
+    `Gems found: **${session.gemsFound}** · Multiplier: **${mult.toFixed(2)}x**\n` +
+    `Cash out value: **${formatCurrency(potential, config)}**` +
+    (footer ? `\n\n${footer}` : "");
+
   return new EmbedBuilder()
     .setColor(0xe67e22)
     .setTitle("Mines")
-    .setDescription(
-      `Wager: **${formatCurrency(session.wager, config)}** · Mines: **${session.mineCount}**\n` +
-        `Gems found: **${session.gemsFound}** · Multiplier: **${mult.toFixed(2)}x**\n` +
-        `Cash out value: **${formatCurrency(potential, config)}**` +
-        (footer ? `\n\n${footer}` : ""),
-    );
+    .setDescription(description);
 }
 
 function buildMinesComponents(session: MinesSession): ActionRowBuilder<ButtonBuilder>[] {
@@ -270,6 +288,54 @@ function msUntilDraw(scheduledDrawAt: Date): number {
   return Math.max(0, scheduledDrawAt.getTime() - Date.now());
 }
 
+function lotteryReceiptEmbed(
+  count: number,
+  ticketNumbers: string,
+  round: { roundNumber: number; potAmount: number; ticketCount: number; scheduledDrawAt: Date },
+  totalCost: number,
+  balance: number,
+  config: Config,
+): EmbedBuilder {
+  return new EmbedBuilder()
+    .setColor(0xf1c40f)
+    .setTitle("Lottery Tickets Purchased")
+    .setDescription(
+      `You bought **${count}** ticket${count === 1 ? "" : "s"} for **${formatCurrency(totalCost, config)}**.\n` +
+        `Ticket number${count === 1 ? "" : "s"}: **${ticketNumbers}**\n` +
+        `Round **#${round.roundNumber}** · Pot: **${formatCurrency(round.potAmount, config)}** ` +
+        `(${round.ticketCount} tickets)\n` +
+        `Draw in **${formatDuration(msUntilDraw(round.scheduledDrawAt))}**\n` +
+        `Balance: **${formatCurrency(balance, config)}**`,
+    )
+    .setFooter({
+      text: `${config.LOTTERY_RAKE_PERCENT}% house fee · Draw every ${config.LOTTERY_DRAW_INTERVAL_DAYS} days`,
+    });
+}
+
+async function announceLotteryPurchase(
+  interaction: ButtonInteraction | ModalSubmitInteraction,
+  userId: string,
+  count: number,
+  totalCost: number,
+  round: { roundNumber: number; potAmount: number; ticketCount: number; scheduledDrawAt: Date },
+  config: Config,
+): Promise<void> {
+  await postLotteryPublicAnnouncement(
+    interaction,
+    buildLotteryPublicDescription(
+      userId,
+      count,
+      totalCost,
+      round.roundNumber,
+      round.potAmount,
+      round.ticketCount,
+      formatDuration(msUntilDraw(round.scheduledDrawAt)),
+      config,
+    ),
+    config,
+  );
+}
+
 export async function handleCasinoLotteryCustomPrompt(
   interaction: ButtonInteraction,
   config: Config,
@@ -307,24 +373,18 @@ export async function handleCasinoLotteryCustomModal(
     const totalCost = count * config.LOTTERY_TICKET_PRICE;
 
     await interaction.editReply({
-      embeds: [
-        new EmbedBuilder()
-          .setColor(0xf1c40f)
-          .setTitle("Lottery Tickets Purchased")
-          .setDescription(
-            `You bought **${count}** ticket${count === 1 ? "" : "s"} for **${formatCurrency(totalCost, config)}**.\n` +
-              `Ticket number${count === 1 ? "" : "s"}: **${ticketNumbers}**\n` +
-              `Round **#${round.roundNumber}** · Pot: **${formatCurrency(round.potAmount, config)}** ` +
-              `(${round.ticketCount} tickets)\n` +
-              `Draw in **${formatDuration(msUntilDraw(round.scheduledDrawAt))}**\n` +
-              `Balance: **${formatCurrency(balance, config)}**`,
-          )
-          .setFooter({
-            text: `${config.LOTTERY_RAKE_PERCENT}% house fee · Draw every ${config.LOTTERY_DRAW_INTERVAL_DAYS} days`,
-          }),
-      ],
+      embeds: [lotteryReceiptEmbed(count, ticketNumbers, round, totalCost, balance, config)],
       components: [],
     });
+
+    await announceLotteryPurchase(
+      interaction,
+      interaction.user.id,
+      count,
+      totalCost,
+      round,
+      config,
+    );
   } catch (err) {
     if (
       err instanceof LotteryInsufficientFundsError ||
@@ -363,24 +423,18 @@ export async function handleCasinoLotteryBuy(
     const totalCost = count * config.LOTTERY_TICKET_PRICE;
 
     await interaction.update({
-      embeds: [
-        new EmbedBuilder()
-          .setColor(0xf1c40f)
-          .setTitle("Lottery Tickets Purchased")
-          .setDescription(
-            `You bought **${count}** ticket${count === 1 ? "" : "s"} for **${formatCurrency(totalCost, config)}**.\n` +
-              `Ticket number${count === 1 ? "" : "s"}: **${ticketNumbers}**\n` +
-              `Round **#${round.roundNumber}** · Pot: **${formatCurrency(round.potAmount, config)}** ` +
-              `(${round.ticketCount} tickets)\n` +
-              `Draw in **${formatDuration(msUntilDraw(round.scheduledDrawAt))}**\n` +
-              `Balance: **${formatCurrency(balance, config)}**`,
-          )
-          .setFooter({
-            text: `${config.LOTTERY_RAKE_PERCENT}% house fee · Draw every ${config.LOTTERY_DRAW_INTERVAL_DAYS} days`,
-          }),
-      ],
+      embeds: [lotteryReceiptEmbed(count, ticketNumbers, round, totalCost, balance, config)],
       components: [],
     });
+
+    await announceLotteryPurchase(
+      interaction,
+      interaction.user.id,
+      count,
+      totalCost,
+      round,
+      config,
+    );
   } catch (err) {
     if (err instanceof LotteryInsufficientFundsError || err instanceof LotteryError) {
       await interaction.followUp(ephemeralOptions({ content: err.message }));
@@ -630,6 +684,19 @@ export async function handleCasinoCoinflipSide(
       amount,
       side,
       config,
+      {
+        isPublic: true,
+        userId: interaction.user.id,
+        gameLabel: "Coinflip",
+        wager: amount,
+        config,
+      },
+    );
+    const balance = await wallet.getBalance(guildId, interaction.user.id);
+    await interaction.followUp(
+      ephemeralOptions({
+        content: `Balance: **${formatCurrency(balance, config)}**`,
+      }),
     );
   } catch (err) {
     if (err instanceof BetValidationError || err instanceof InsufficientFundsError) {
@@ -677,21 +744,32 @@ export async function handleCasinoHiLo(
       balance = await wallet.getBalance(guildId, interaction.user.id);
     }
 
+    const payout = won ? amount * 2 : 0;
+    const body =
+      `You guessed **${choice}**.\n` +
+      `Previous: **${currentRank}** → Next: **${nextCard.label}**\n` +
+      publicResultFooter(amount, payout, config, { lost: !won });
+
     await interaction.update({
       embeds: [
         new EmbedBuilder()
           .setColor(won ? 0x57f287 : 0xed4245)
           .setTitle(won ? "Hi-Lo — You Won!" : "Hi-Lo — You Lost")
           .setDescription(
-            `You guessed **${choice}**.\n` +
-              `Previous: **${currentRank}** → Next: **${nextCard.label}**\n` +
-              `Wager: **${formatCurrency(amount, config)}**\n` +
-              (won ? `Payout: **${formatCurrency(amount * 2, config)}**\n` : "") +
-              `Balance: **${formatCurrency(balance, config)}**`,
+            prefixDescription(
+              buildGameHeader(interaction.user.id, "Hi-Lo", amount, config),
+              body,
+            ),
           ),
       ],
       components: [],
     });
+
+    await interaction.followUp(
+      ephemeralOptions({
+        content: `Balance: **${formatCurrency(balance, config)}**`,
+      }),
+    );
   } catch (err) {
     if (err instanceof BetValidationError) {
       await interaction.reply({ content: err.message, ephemeral: true });
@@ -736,13 +814,19 @@ export async function handleCasinoMinesConfig(
       mineCount,
     );
 
-    const reply = await interaction.update({
-      content: null,
-      embeds: [buildMinesEmbed(session, config, "Reveal tiles to find gems. Cash out before hitting a mine!")],
+    const { message } = await postPublicGameMessage(interaction, {
+      embeds: [
+        buildMinesEmbed(
+          session,
+          config,
+          "Reveal tiles to find gems. Cash out before hitting a mine!",
+          interaction.user.id,
+        ),
+      ],
       components: buildMinesComponents(session),
     });
 
-    await mines.setMessageId(session.id, reply.id);
+    await mines.setMessageId(session.id, message.id);
   } catch (err) {
     if (err instanceof BetValidationError || err instanceof InsufficientFundsError || err instanceof MinesSessionError) {
       await interaction.reply({ content: err.message, ephemeral: true });
@@ -777,10 +861,14 @@ export async function handleCasinoMinesReveal(
     const updated = await mines.revealTile(session, tileIndex);
 
     if (updated.status === "busted") {
-      const balance = await wallet.getBalance(updated.guildId, updated.userId);
       await interaction.update({
         embeds: [
-          buildMinesEmbed(updated, config, "💥 **Boom!** You hit a mine and lost your wager."),
+          buildMinesEmbed(
+            updated,
+            config,
+            "💥 **Boom!** You hit a mine and lost your wager.",
+            updated.userId,
+          ),
         ],
         components: buildMinesComponents(updated),
       });
@@ -788,7 +876,7 @@ export async function handleCasinoMinesReveal(
     }
 
     await interaction.update({
-      embeds: [buildMinesEmbed(updated, config)],
+      embeds: [buildMinesEmbed(updated, config, undefined, updated.userId)],
       components: buildMinesComponents(updated),
     });
   } catch (err) {
@@ -828,11 +916,18 @@ export async function handleCasinoMinesCashout(
         buildMinesEmbed(
           updated,
           config,
-          `💰 **Cashed out!** Won **${formatCurrency(payout, config)}**\nBalance: **${formatCurrency(balance, config)}**`,
+          `💰 **Cashed out!** Won **${formatCurrency(payout, config)}**`,
+          updated.userId,
         ),
       ],
       components: buildMinesComponents(updated),
     });
+
+    await interaction.followUp(
+      ephemeralOptions({
+        content: `Balance: **${formatCurrency(balance, config)}**`,
+      }),
+    );
   } catch (err) {
     if (err instanceof MinesSessionError) {
       await interaction.reply({ content: err.message, ephemeral: true });

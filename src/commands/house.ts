@@ -13,6 +13,7 @@ import type { BlackjackSessionService } from "../services/blackjack/session";
 import { BlackjackSessionError } from "../services/blackjack/session";
 import { type CoinSide } from "../services/coinflip";
 import { runCoinflipAnimation } from "./casino/presentations";
+import { postPublicGameMessage, buildGameHeader, prefixDescription } from "./casino/publicMessage";
 import { InsufficientFundsError } from "../services/wallet";
 import { assertGuild } from "../utils/permissions";
 import { BetValidationError, formatCurrency, validateBetAmount } from "../utils/bets";
@@ -22,10 +23,31 @@ import {
   formatHand,
   formatCard,
   type Card,
+  type GameOutcome,
 } from "../services/blackjack/engine";
+import { ephemeralOptions } from "../utils/discord";
 
 function gameEmbed(title: string, description: string): EmbedBuilder {
   return new EmbedBuilder().setColor(0x57f287).setTitle(title).setDescription(description);
+}
+
+function formatBlackjackOutcome(
+  result: GameOutcome,
+  config: Config,
+  balanceAfter?: number,
+  isPublic = false,
+): string {
+  const base =
+    result === "blackjack"
+      ? "Blackjack! You win 3:2."
+      : result === "win"
+        ? "You win!"
+        : result === "push"
+          ? "Push — wager returned."
+          : "You lose.";
+
+  if (isPublic || balanceAfter == null) return base;
+  return `${base}\nNew balance: **${formatCurrency(balanceAfter, config)}**.`;
 }
 
 export async function handleCoinflip(
@@ -48,6 +70,19 @@ export async function handleCoinflip(
       amount,
       side,
       config,
+      {
+        isPublic: true,
+        userId: interaction.user.id,
+        gameLabel: "Coinflip",
+        wager: amount,
+        config,
+      },
+    );
+    const balance = await wallet.getBalance(guildId, interaction.user.id);
+    await interaction.followUp(
+      ephemeralOptions({
+        content: `Balance: **${formatCurrency(balance, config)}**`,
+      }),
     );
   } catch (err) {
     if (err instanceof BetValidationError || err instanceof InsufficientFundsError) {
@@ -92,6 +127,12 @@ function buildBlackjackComponents(
   return [row];
 }
 
+type BlackjackEmbedOptions = {
+  userId?: string;
+  isPublic?: boolean;
+  wager?: number;
+};
+
 function buildBlackjackEmbed(
   session: {
     playerCards: string[];
@@ -103,6 +144,7 @@ function buildBlackjackEmbed(
   config: Config,
   revealDealer = false,
   outcome?: string,
+  options?: BlackjackEmbedOptions,
 ): EmbedBuilder {
   const playerCards = session.playerCards as Card[];
   const dealerCards = session.dealerCards as Card[];
@@ -110,7 +152,18 @@ function buildBlackjackEmbed(
   const dealerValue = evaluateHand(dealerCards);
   const effectiveWager = session.doubled ? session.wager * 2 : session.wager;
 
-  let description = `Wager: **${formatCurrency(effectiveWager, config)}**\n\n`;
+  let description = "";
+  if (options?.isPublic && options.userId) {
+    description =
+      buildGameHeader(
+        options.userId,
+        "Blackjack",
+        options.wager ?? session.wager,
+        config,
+      ) + "\n\n";
+  }
+
+  description += `Wager: **${formatCurrency(effectiveWager, config)}**\n\n`;
   description += `**Your hand** (${playerValue.total}${playerValue.soft ? " soft" : ""}): ${formatHand(playerCards)}\n`;
   description += revealDealer
     ? `**Dealer** (${dealerValue.total}): ${formatHand(dealerCards)}\n`
@@ -131,12 +184,15 @@ export async function runBlackjackWithWager(
   blackjack: BlackjackSessionService,
   config: Config,
   amount: number,
+  options?: { publishMode?: "interaction" | "channel" },
 ) {
   const guildId = assertGuild(interaction);
   const channelId = interaction.channelId;
   if (!channelId) {
     throw new Error("This command can only be used in a server channel.");
   }
+
+  const isChannelPublish = options?.publishMode === "channel";
 
   validateBetAmount(amount, config);
   const balance = await wallet.getBalance(guildId, interaction.user.id);
@@ -153,19 +209,12 @@ export async function runBlackjackWithWager(
 
   const finished = session.status === "completed";
   let outcome: string | undefined;
+  let balanceAfter: number | undefined;
 
   if (finished) {
     const result = blackjack.getOutcome(session);
-    const balanceAfter = await wallet.getBalance(guildId, interaction.user.id);
-    outcome =
-      result === "blackjack"
-        ? "Blackjack! You win 3:2."
-        : result === "win"
-          ? "You win!"
-          : result === "push"
-            ? "Push — wager returned."
-            : "You lose.";
-    outcome += `\nNew balance: **${formatCurrency(balanceAfter, config)}**.`;
+    balanceAfter = await wallet.getBalance(guildId, interaction.user.id);
+    outcome = formatBlackjackOutcome(result, config, balanceAfter, isChannelPublish);
   }
 
   const canDouble =
@@ -174,23 +223,43 @@ export async function runBlackjackWithWager(
     (session.playerCards as Card[]).length === 2 &&
     balance >= amount;
 
-  const embed = buildBlackjackEmbed(session, config, finished, outcome);
+  const embed = buildBlackjackEmbed(session, config, finished, outcome, {
+    userId: interaction.user.id,
+    isPublic: true,
+    wager: amount,
+  });
   const components = buildBlackjackComponents(session.id, canDouble, finished);
 
-  const replyMessage =
-    interaction.deferred || interaction.replied
-      ? await interaction.editReply({
-          embeds: [embed],
-          components,
-          fetchReply: true,
-        })
-      : await interaction.reply({
-          embeds: [embed],
-          components,
-          fetchReply: true,
-        });
+  if (isChannelPublish) {
+    const { message } = await postPublicGameMessage(interaction, {
+      embeds: [embed],
+      components,
+    });
+    await blackjack.setMessageId(session.id, message.id);
+  } else {
+    const replyMessage =
+      interaction.deferred || interaction.replied
+        ? await interaction.editReply({
+            embeds: [embed],
+            components,
+            fetchReply: true,
+          })
+        : await interaction.reply({
+            embeds: [embed],
+            components,
+            fetchReply: true,
+          });
 
-  await blackjack.setMessageId(session.id, replyMessage.id);
+    await blackjack.setMessageId(session.id, replyMessage.id);
+  }
+
+  if (finished && balanceAfter != null) {
+    await interaction.followUp(
+      ephemeralOptions({
+        content: `Balance: **${formatCurrency(balanceAfter, config)}**`,
+      }),
+    );
+  }
 }
 
 export async function handleBlackjack(
@@ -254,18 +323,11 @@ export async function handleBlackjackButton(
     }
 
     let outcome: string | undefined;
+    let balanceAfter: number | undefined;
     if (finished) {
       const result = blackjack.getOutcome(updated);
-      const balanceAfter = await wallet.getBalance(guildId, interaction.user.id);
-      outcome =
-        result === "blackjack"
-          ? "Blackjack! You win 3:2."
-          : result === "win"
-            ? "You win!"
-            : result === "push"
-              ? "Push — wager returned."
-              : "You lose.";
-      outcome += `\nNew balance: **${formatCurrency(balanceAfter, config)}**.`;
+      balanceAfter = await wallet.getBalance(guildId, interaction.user.id);
+      outcome = formatBlackjackOutcome(result, config, balanceAfter, isPublic);
     }
 
     const balance = await wallet.getBalance(guildId, interaction.user.id);
@@ -275,10 +337,22 @@ export async function handleBlackjackButton(
       (updated.playerCards as Card[]).length === 2 &&
       balance >= updated.wager;
 
-    const embed = buildBlackjackEmbed(updated, config, finished, outcome);
+    const embed = buildBlackjackEmbed(updated, config, finished, outcome, {
+      userId: interaction.user.id,
+      isPublic: true,
+      wager: updated.wager,
+    });
     const components = buildBlackjackComponents(updated.id, canDouble, finished);
 
     await interaction.update({ embeds: [embed], components });
+
+    if (finished && balanceAfter != null) {
+      await interaction.followUp(
+        ephemeralOptions({
+          content: `Balance: **${formatCurrency(balanceAfter, config)}**`,
+        }),
+      );
+    }
   } catch (err) {
     if (err instanceof BlackjackSessionError) {
       await interaction.reply({ content: err.message, ephemeral: true });
