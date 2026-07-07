@@ -9,7 +9,7 @@ import {
 } from "discord.js";
 import type { Config } from "../../config";
 import { formatCurrency } from "../../utils/bets";
-import { ephemeralOptions } from "../../utils/discord";
+import { ephemeralOptions, EPHEMERAL } from "../../utils/discord";
 
 export type PublicMessageEdit = (payload: MessageEditOptions) => Promise<unknown>;
 
@@ -45,19 +45,27 @@ export function prefixDescription(header: string, body: string): string {
   return `${header}\n\n${body}`;
 }
 
-export async function acknowledgeSetup(interaction: SetupInteraction): Promise<void> {
+export async function deferSetupInteraction(interaction: SetupInteraction): Promise<void> {
+  if (interaction.deferred || interaction.replied) return;
+
   if (interaction.isButton()) {
-    await interaction.update({
-      content: SETUP_ACK,
-      embeds: [],
-      components: [],
-    });
+    await interaction.deferUpdate();
   } else {
-    await interaction.reply({
-      content: SETUP_ACK,
-      ephemeral: true,
-    });
+    await interaction.deferReply({ flags: EPHEMERAL });
   }
+}
+
+export async function finalizeSetupInteraction(interaction: SetupInteraction): Promise<void> {
+  await interaction.editReply({
+    content: SETUP_ACK,
+    embeds: [],
+    components: [],
+  });
+}
+
+/** @deprecated use finalizeSetupInteraction after deferSetupInteraction */
+export async function acknowledgeSetup(interaction: SetupInteraction): Promise<void> {
+  await finalizeSetupInteraction(interaction);
 }
 
 type PublicPayload = {
@@ -66,22 +74,28 @@ type PublicPayload = {
   components?: ActionRowBuilder<ButtonBuilder>[];
 };
 
+export type PublicPayloadFactory = () => Promise<PublicPayload>;
+
 export async function postPublicGameMessage(
   interaction: SetupInteraction,
-  payload: PublicPayload,
+  payload: PublicPayload | PublicPayloadFactory,
 ): Promise<{ message: Message; edit: PublicMessageEdit }> {
   const channel = interaction.channel;
   if (!channel || !channel.isTextBased() || channel.isDMBased()) {
     throw new Error("This command can only be used in a server channel.");
   }
 
+  await deferSetupInteraction(interaction);
+
+  const resolved = typeof payload === "function" ? await payload() : payload;
+
   const message = await channel.send({
-    content: payload.content ?? undefined,
-    embeds: payload.embeds ?? [],
-    components: payload.components ?? [],
+    content: resolved.content ?? undefined,
+    embeds: resolved.embeds ?? [],
+    components: resolved.components ?? [],
   });
 
-  await acknowledgeSetup(interaction);
+  await finalizeSetupInteraction(interaction);
 
   return {
     message,

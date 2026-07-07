@@ -392,11 +392,11 @@ export async function handleCasinoLotteryCustomModal(
       err instanceof LotteryError ||
       err instanceof Error
     ) {
-      const payload = ephemeralOptions({ content: err.message });
+      const payload = { content: err.message };
       if (interaction.deferred || interaction.replied) {
         await interaction.editReply(payload);
       } else {
-        await interaction.reply(payload);
+        await interaction.reply(ephemeralOptions(payload));
       }
       return;
     }
@@ -550,8 +550,17 @@ export async function handleCasinoWagerBet(
 
     await executeCasinoGame(interaction, game, amount, wallet, blackjack, config);
   } catch (err) {
-    if (err instanceof InsufficientFundsError) {
-      await interaction.reply({ content: err.message, ephemeral: true });
+    if (
+      err instanceof InsufficientFundsError ||
+      err instanceof BetValidationError ||
+      err instanceof BlackjackSessionError
+    ) {
+      const payload = { content: err.message };
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply(payload);
+      } else {
+        await interaction.reply(ephemeralOptions(payload));
+      }
       return;
     }
     throw err;
@@ -817,30 +826,40 @@ export async function handleCasinoMinesConfig(
       throw new Error("Invalid mine count.");
     }
 
-    const session = await mines.startSession(
-      guildId,
-      interaction.user.id,
-      channelId,
-      amount,
-      mineCount,
-    );
+    let sessionId = "";
 
-    const { message } = await postPublicGameMessage(interaction, {
-      embeds: [
-        buildMinesEmbed(
-          session,
-          config,
-          "Reveal tiles to find gems. Cash out before hitting a mine!",
-          interaction.user.id,
-        ),
-      ],
-      components: buildMinesComponents(session),
+    const { message } = await postPublicGameMessage(interaction, async () => {
+      const session = await mines.startSession(
+        guildId,
+        interaction.user.id,
+        channelId,
+        amount,
+        mineCount,
+      );
+      sessionId = session.id;
+
+      return {
+        embeds: [
+          buildMinesEmbed(
+            session,
+            config,
+            "Reveal tiles to find gems. Cash out before hitting a mine!",
+            interaction.user.id,
+          ),
+        ],
+        components: buildMinesComponents(session),
+      };
     });
 
-    await mines.setMessageId(session.id, message.id);
+    await mines.setMessageId(sessionId, message.id);
   } catch (err) {
     if (err instanceof BetValidationError || err instanceof InsufficientFundsError || err instanceof MinesSessionError) {
-      await interaction.reply({ content: err.message, ephemeral: true });
+      const payload = { content: err.message };
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply(payload);
+      } else {
+        await interaction.reply(ephemeralOptions(payload));
+      }
       return;
     }
     throw err;

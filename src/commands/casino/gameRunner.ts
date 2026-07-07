@@ -24,7 +24,7 @@ import {
   PLINKO_FRAME_DELAY_MS,
 } from "../../services/casino/plinko";
 import { formatCurrency } from "../../utils/bets";
-import { getCasinoGameLabel } from "./types";
+import { getCasinoGameLabel, type CasinoGame } from "./types";
 import { coinflipSideRow, hiloChoiceRow, minesCountRow, luckyNumberRows } from "./components";
 import {
   buildGameHeader,
@@ -220,18 +220,20 @@ export async function executeCasinoGame(
     }
 
     case "hilo": {
-      await wallet.debit(guildId, userId, amount, "hilo_bet");
-      const card = drawCard();
-      const body =
-        `Current card: **${card.label}**\n\nWill the next card be higher or lower?`;
-      await postPublicGameMessage(interaction, {
-        embeds: [
-          new EmbedBuilder()
-            .setColor(0x3498db)
-            .setTitle("Hi-Lo")
-            .setDescription(describePublic(userId, game, amount, config, body)),
-        ],
-        components: [hiloChoiceRow(userId, amount, card.rank)],
+      await postPublicGameMessage(interaction, async () => {
+        await wallet.debit(guildId, userId, amount, "hilo_bet");
+        const card = drawCard();
+        const body =
+          `Current card: **${card.label}**\n\nWill the next card be higher or lower?`;
+        return {
+          embeds: [
+            new EmbedBuilder()
+              .setColor(0x3498db)
+              .setTitle("Hi-Lo")
+              .setDescription(describePublic(userId, game, amount, config, body)),
+          ],
+          components: [hiloChoiceRow(userId, amount, card.rank)],
+        };
       });
       return;
     }
