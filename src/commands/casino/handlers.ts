@@ -31,7 +31,7 @@ import {
   type MinesCount,
 } from "../../services/casino/mines/engine";
 import type { MinesSession } from "../../db/schema";
-import { CASINO_GAMES, type CasinoGame, parseWagerAmount, parseLuckyPick } from "./types";
+import { CASINO_GAMES, type CasinoGame, parseWagerAmount, parseLuckyPick, parseKenoPicks, KenoPickError } from "./types";
 import {
   getLotteryTicketPresets,
   LOTTERY_MENU,
@@ -42,6 +42,8 @@ import {
   customLuckyNumberModal,
   customWagerModal,
   luckyNumberRows,
+  kenoPickRows,
+  customKenoModal,
   wagerSelectionEmbed,
   wagerSelectionRows,
   customLotteryTicketModal,
@@ -51,10 +53,13 @@ import {
 } from "./components";
 import {
   executeCasinoGame,
+  executeKenoWithPicks,
   executeLuckyWithPick,
   randomLuckyPick,
+  showKenoPicker,
   showLuckyNumberPicker,
 } from "./gameRunner";
+import { generateQuickPick } from "../../services/casino/keno";
 import { runCoinflipAnimation } from "./presentations";
 import {
   buildGameHeader,
@@ -508,6 +513,11 @@ export async function handleCasinoWagerBet(
       return;
     }
 
+    if (game === "keno") {
+      await showKenoPicker(interaction, amount, config);
+      return;
+    }
+
     await executeCasinoGame(interaction, game, amount, wallet, blackjack, config);
   } catch (err) {
     if (
@@ -549,6 +559,16 @@ export async function handleCasinoCustomAmountModal(
         embeds: [],
         content: `Wager: **${formatCurrency(amount, config)}** — pick your lucky number:`,
         components: luckyNumberRows(amount),
+        ephemeral: true,
+      });
+      return;
+    }
+
+    if (game === "keno") {
+      await interaction.reply({
+        embeds: [],
+        content: `Wager: **${formatCurrency(amount, config)}** — choose your numbers:`,
+        components: kenoPickRows(amount),
         ephemeral: true,
       });
       return;
@@ -637,6 +657,73 @@ export async function handleCasinoLuckyCustomPrompt(
   assertGuild(interaction);
   const amount = Number.parseInt(amountStr, 10);
   await interaction.showModal(customLuckyNumberModal(amount));
+}
+
+export async function handleCasinoKenoQuickPick(
+  interaction: ButtonInteraction,
+  spotCountStr: string,
+  amountStr: string,
+  wallet: WalletService,
+  blackjack: BlackjackSessionService,
+  config: Config,
+) {
+  assertGuild(interaction);
+
+  try {
+    const amount = parseWagerAmount(amountStr, config);
+    await ensureFunds(wallet, interaction.guildId!, interaction.user.id, amount);
+    const spotCount = Number.parseInt(spotCountStr, 10);
+    const picks = generateQuickPick(spotCount);
+    await executeKenoWithPicks(interaction, amount, picks, wallet, blackjack, config);
+  } catch (err) {
+    if (
+      err instanceof BetValidationError ||
+      err instanceof InsufficientFundsError ||
+      err instanceof KenoPickError ||
+      err instanceof Error
+    ) {
+      await interaction.reply({ content: err.message, ephemeral: true });
+      return;
+    }
+    throw err;
+  }
+}
+
+export async function handleCasinoKenoCustomPrompt(
+  interaction: ButtonInteraction,
+  amountStr: string,
+) {
+  assertGuild(interaction);
+  const amount = Number.parseInt(amountStr, 10);
+  await interaction.showModal(customKenoModal(amount));
+}
+
+export async function handleCasinoKenoCustomModal(
+  interaction: ModalSubmitInteraction,
+  amountStr: string,
+  wallet: WalletService,
+  blackjack: BlackjackSessionService,
+  config: Config,
+) {
+  assertGuild(interaction);
+
+  try {
+    const amount = parseWagerAmount(amountStr, config);
+    const picks = parseKenoPicks(interaction.fields.getTextInputValue("picks"));
+    await ensureFunds(wallet, interaction.guildId!, interaction.user.id, amount);
+    await executeKenoWithPicks(interaction, amount, picks, wallet, blackjack, config);
+  } catch (err) {
+    if (
+      err instanceof BetValidationError ||
+      err instanceof InsufficientFundsError ||
+      err instanceof KenoPickError ||
+      err instanceof Error
+    ) {
+      await interaction.reply({ content: err.message, ephemeral: true });
+      return;
+    }
+    throw err;
+  }
 }
 
 export async function handleCasinoCoinflipSide(

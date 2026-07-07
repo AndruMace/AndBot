@@ -15,6 +15,17 @@ import {
   sleep as luckySleep,
 } from "../../services/casino/luckyAnim";
 import { rollLuckyNumber, calculateLuckyPayout } from "../../services/casino/lucky";
+import {
+  calculateKenoPayout,
+  drawKenoNumbers,
+  formatKenoNumbers,
+} from "../../services/casino/keno";
+import {
+  buildKenoRevealFrames,
+  KENO_FRAME_DELAY_MS,
+  renderKenoFrame,
+  sleep as kenoSleep,
+} from "../../services/casino/kenoAnim";
 import { formatCurrency } from "../../utils/bets";
 import {
   buildGameHeader,
@@ -180,5 +191,65 @@ export async function runLuckyAnimation(
         .setDescription(describePublic(ctx, body)),
     ],
     components: casinoPostGameComponents("lucky"),
+  });
+}
+
+export async function runKenoAnimation(
+  edit: PresentationEdit,
+  wallet: WalletService,
+  guildId: string,
+  userId: string,
+  amount: number,
+  picks: number[],
+  config: Config,
+  ctx?: PresentationContext,
+) {
+  await wallet.debit(guildId, userId, amount, "keno_bet", undefined, {
+    spots: picks.length,
+    picks,
+  });
+  const drawn = drawKenoNumbers();
+  const frames = buildKenoRevealFrames(drawn);
+
+  for (let step = 0; step < frames.length; step++) {
+    const spinning = step < frames.length - 1;
+    const body = renderKenoFrame(picks, frames[step]!, spinning);
+    await edit({
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0x2ecc71)
+          .setTitle("Keno")
+          .setDescription(describePublic(ctx, body)),
+      ],
+    });
+    if (spinning) await kenoSleep(KENO_FRAME_DELAY_MS);
+  }
+
+  const { payout, hits, multiplier, description } = calculateKenoPayout(amount, picks, drawn);
+  let balance: number;
+  if (payout > 0) {
+    balance = await wallet.credit(guildId, userId, payout, "keno_win", undefined, {
+      spots: picks.length,
+      hits,
+      multiplier,
+    });
+  } else {
+    balance = await wallet.getBalance(guildId, userId);
+  }
+
+  const body =
+    `Your picks: ${formatKenoNumbers(picks)}\n` +
+    `Drawn: ${formatKenoNumbers(drawn, new Set(picks.filter((n) => drawn.includes(n))))}\n\n` +
+    `${description}\n` +
+    outcomeFooter(ctx, amount, payout, config, { lost: payout === 0, balance });
+
+  await edit({
+    embeds: [
+      new EmbedBuilder()
+        .setColor(payout > 0 ? 0x57f287 : 0xed4245)
+        .setTitle(payout > 0 ? "Keno — Winner!" : "Keno — No Luck")
+        .setDescription(describePublic(ctx, body)),
+    ],
+    components: casinoPostGameComponents("keno"),
   });
 }

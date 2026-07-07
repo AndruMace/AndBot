@@ -8,7 +8,8 @@ export type CasinoGame =
   | "hilo"
   | "lucky"
   | "mines"
-  | "plinko";
+  | "plinko"
+  | "keno";
 
 export const CASINO_GAMES: {
   id: CasinoGame;
@@ -23,6 +24,7 @@ export const CASINO_GAMES: {
   { id: "lucky", label: "Lucky #", emoji: "🎯", description: "Pick 1–100; exact match pays 25x." },
   { id: "mines", label: "Mines", emoji: "💣", description: "Reveal gems, avoid mines, cash out anytime." },
   { id: "plinko", label: "Plinko", emoji: "🔻", description: "Drop the chip — land up to 5x." },
+  { id: "keno", label: "Keno", emoji: "🎱", description: "Pick up to 10 numbers; 20 drawn from 80." },
 ];
 
 export function parseWagerAmount(raw: string, config: Config): number {
@@ -45,3 +47,5 @@ export function parseLuckyPick(raw: string): number {
   }
   return pick;
 }
+
+export { parseKenoPicks, KenoPickError } from "../../services/casino/keno";

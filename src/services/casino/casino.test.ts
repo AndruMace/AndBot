@@ -10,6 +10,16 @@ import {
 import { buildLuckyFrames, renderLuckyFrame } from "./luckyAnim";
 import { calculatePlinkoPayout, dropPlinko, generatePlinkoPath, renderPlinkoFrame, PLINKO_BUCKETS, PLINKO_PEG_ROWS, PLINKO_COL_WIDTH } from "./plinko";
 import { gemMultiplier, generateMinePositions, calculateMinesPayout } from "./mines/engine";
+import {
+  calculateKenoPayout,
+  countKenoHits,
+  drawKenoNumbers,
+  generateQuickPick,
+  getKenoMultiplier,
+  parseKenoPicks,
+  KENO_DRAW_COUNT,
+} from "./keno";
+import { buildKenoRevealFrames, renderKenoFrame } from "./kenoAnim";
 
 describe("slots", () => {
   test("pays triple match", () => {
@@ -170,6 +180,52 @@ describe("plinko", () => {
         expect(pointer).not.toBe("^");
       }
     }
+  });
+});
+
+describe("keno", () => {
+  test("draws 20 unique numbers", () => {
+    const drawn = drawKenoNumbers();
+    expect(drawn).toHaveLength(KENO_DRAW_COUNT);
+    expect(new Set(drawn).size).toBe(KENO_DRAW_COUNT);
+    expect(drawn.every((n) => n >= 1 && n <= 80)).toBe(true);
+  });
+
+  test("parses comma-separated picks", () => {
+    expect(parseKenoPicks("3, 7, 14, 22")).toEqual([3, 7, 14, 22]);
+  });
+
+  test("rejects duplicate picks", () => {
+    expect(() => parseKenoPicks("3, 3, 7")).toThrow();
+  });
+
+  test("quick pick returns requested count", () => {
+    const picks = generateQuickPick(5);
+    expect(picks).toHaveLength(5);
+    expect(new Set(picks).size).toBe(5);
+  });
+
+  test("counts hits", () => {
+    expect(countKenoHits([3, 7, 14], [3, 9, 14, 20])).toBe(2);
+  });
+
+  test("pays from paytable", () => {
+    expect(getKenoMultiplier(5, 5)).toBe(250);
+    const result = calculateKenoPayout(100, [1, 2, 3, 4, 5], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(result.hits).toBe(5);
+    expect(result.payout).toBe(25000);
+  });
+
+  test("reveal frames end on full draw", () => {
+    const drawn = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+    const frames = buildKenoRevealFrames(drawn);
+    expect(frames[frames.length - 1]).toEqual(drawn);
+  });
+
+  test("render highlights hits", () => {
+    const text = renderKenoFrame([3, 7], [3, 9, 14], false);
+    expect(text).toContain("**3**");
+    expect(text).toContain("9");
   });
 });
 

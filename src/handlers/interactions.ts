@@ -32,6 +32,9 @@ import {
   handleCasinoLuckyPick,
   handleCasinoLuckyCustomModal,
   handleCasinoLuckyCustomPrompt,
+  handleCasinoKenoQuickPick,
+  handleCasinoKenoCustomModal,
+  handleCasinoKenoCustomPrompt,
   handleCasinoCoinflipSide,
   handleCasinoHiLo,
   handleCasinoMinesConfig,
@@ -325,6 +328,24 @@ export function registerInteractionHandler(client: Client, db: Database, config:
             return;
           }
 
+          if (action === "kn") {
+            if (sub === "custom" && rest[0]) {
+              await handleCasinoKenoCustomPrompt(interaction, rest[0]);
+              return;
+            }
+            if (sub === "qp" && rest[0] && rest[1]) {
+              await handleCasinoKenoQuickPick(
+                interaction,
+                rest[0],
+                rest[1],
+                wallet,
+                blackjack,
+                config,
+              );
+              return;
+            }
+          }
+
           if (action === "cf" && rest.length >= 2) {
             const side = sub as CoinSide;
             if (side === "heads" || side === "tails") {
@@ -492,6 +513,16 @@ export function registerInteractionHandler(client: Client, db: Database, config:
           }
           if (casinoParts[1] === "ln" && casinoParts[2]) {
             await handleCasinoLuckyCustomModal(
+              interaction,
+              casinoParts[2],
+              wallet,
+              blackjack,
+              config,
+            );
+            return;
+          }
+          if (casinoParts[1] === "kn" && casinoParts[2]) {
+            await handleCasinoKenoCustomModal(
               interaction,
               casinoParts[2],
               wallet,

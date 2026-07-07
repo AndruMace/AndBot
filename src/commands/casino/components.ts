@@ -171,6 +171,50 @@ export function luckyNumberRows(amount: number): ActionRowBuilder<ButtonBuilder>
   ];
 }
 
+export function kenoPickRows(amount: number): ActionRowBuilder<ButtonBuilder>[] {
+  return [
+    new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setCustomId(buildButtonId("casino", "kn", "qp", "3", String(amount)))
+        .setLabel("Quick Pick 3")
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId(buildButtonId("casino", "kn", "qp", "5", String(amount)))
+        .setLabel("Quick Pick 5")
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId(buildButtonId("casino", "kn", "qp", "8", String(amount)))
+        .setLabel("Quick Pick 8")
+        .setStyle(ButtonStyle.Primary),
+    ),
+    new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setCustomId(buildButtonId("casino", "kn", "custom", String(amount)))
+        .setLabel("Custom Numbers")
+        .setStyle(ButtonStyle.Secondary)
+        .setEmoji("✏️"),
+    ),
+  ];
+}
+
+export function customKenoModal(amount: number): ModalBuilder {
+  return new ModalBuilder()
+    .setCustomId(buildButtonId("casino", "modal", "kn", String(amount)))
+    .setTitle("Keno — Pick Numbers")
+    .addComponents(
+      new ActionRowBuilder<TextInputBuilder>().addComponents(
+        new TextInputBuilder()
+          .setCustomId("picks")
+          .setLabel("Numbers (1–80, comma-separated)")
+          .setStyle(TextInputStyle.Paragraph)
+          .setPlaceholder("e.g. 3, 7, 14, 22, 31")
+          .setRequired(true)
+          .setMinLength(1)
+          .setMaxLength(120),
+      ),
+    );
+}
+
 export function wagerSelectionEmbed(
   game: CasinoGame,
   config: Config,

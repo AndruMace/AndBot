@@ -14,7 +14,19 @@ import {
 } from "../../services/casino/slots";
 import { drawCard } from "../../services/casino/hilo";
 import { rollLuckyNumber } from "../../services/casino/lucky";
-import { runLuckyAnimation, type PresentationContext } from "./presentations";
+import {
+  calculateKenoPayout,
+  drawKenoNumbers,
+  formatKenoNumbers,
+  generateQuickPick,
+} from "../../services/casino/keno";
+import {
+  buildKenoRevealFrames,
+  KENO_FRAME_DELAY_MS,
+  renderKenoFrame,
+  sleep as kenoSleep,
+} from "../../services/casino/kenoAnim";
+import { runLuckyAnimation, runKenoAnimation, type PresentationContext } from "./presentations";
 import {
   dropPlinkoIndex,
   calculatePlinkoPayout,
@@ -25,7 +37,7 @@ import {
 } from "../../services/casino/plinko";
 import { formatCurrency } from "../../utils/bets";
 import { getCasinoGameLabel, type CasinoGame } from "./types";
-import { coinflipSideRow, hiloChoiceRow, minesCountRow, luckyNumberRows, casinoPostGameComponents } from "./components";
+import { coinflipSideRow, hiloChoiceRow, minesCountRow, luckyNumberRows, kenoPickRows, casinoPostGameComponents } from "./components";
 import {
   buildGameHeader,
   postPublicGameMessage,
@@ -283,8 +295,61 @@ export async function executeCasinoGame(
         ],
       });
       await runPlinkoAnimation(edit, guildId, userId, amount, wallet, config);
+      return;
+    }
+
+    case "keno": {
+      const payload = {
+        content: `Wager: **${formatCurrency(amount, config)}** — choose your numbers:`,
+        embeds: [],
+        components: kenoPickRows(amount),
+      };
+      if (interaction.isButton()) {
+        await interaction.update(payload);
+      } else {
+        await interaction.reply({ ...payload, ephemeral: true });
+      }
+      return;
     }
   }
+}
+
+export async function showKenoPicker(
+  interaction: ButtonInteraction,
+  amount: number,
+  config: Config,
+) {
+  await interaction.update({
+    content: `Wager: **${formatCurrency(amount, config)}** — choose your numbers:`,
+    embeds: [],
+    components: kenoPickRows(amount),
+  });
+}
+
+export async function executeKenoWithPicks(
+  interaction: GameInteraction,
+  amount: number,
+  picks: number[],
+  wallet: WalletService,
+  blackjack: BlackjackSessionService,
+  config: Config,
+) {
+  const guildId = interaction.guildId!;
+  const userId = interaction.user.id;
+  const ctx = presentationContext(userId, "keno", amount, config);
+
+  await recordCasinoWager(wallet, guildId, userId, amount);
+
+  const { edit } = await postPublicGameMessage(interaction, {
+    embeds: [
+      new EmbedBuilder()
+        .setColor(0x2ecc71)
+        .setTitle("Keno")
+        .setDescription(describePublic(userId, "keno", amount, config, "*Drawing numbers...*")),
+    ],
+  });
+
+  await runKenoAnimation(edit, wallet, guildId, userId, amount, picks, config, ctx);
 }
 
 export async function showLuckyNumberPicker(

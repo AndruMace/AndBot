@@ -35,6 +35,7 @@ export async function handleHelp(
           "**Lucky Number** — Pick 1–100; exact match 25x, close guesses 2–5x",
           "**Mines** — Reveal gems, avoid mines, cash out anytime",
           "**Plinko** — Drop the chip; land in buckets up to 5x",
+          "**Keno** — Pick 1–10 numbers; 20 drawn from 80; up to 10,000x",
           "**Lottery** — Buy tickets from the casino menu",
           "`/coinflip` and `/blackjack` also work as direct commands",
         ].join("\n"),
