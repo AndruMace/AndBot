@@ -13,7 +13,7 @@ import type { BlackjackSessionService } from "../services/blackjack/session";
 import { BlackjackSessionError } from "../services/blackjack/session";
 import { type CoinSide } from "../services/coinflip";
 import { runCoinflipAnimation } from "./casino/presentations";
-import { postPublicGameMessage, buildGameHeader, prefixDescription, type SetupInteraction } from "./casino/publicMessage";
+import { postPublicGameMessage, buildGameHeader, prefixDescription, type SetupInteraction, rollbackCreatedSession } from "./casino/publicMessage";
 import { casinoPostGameComponents } from "./casino/components";
 import { InsufficientFundsError } from "../services/wallet";
 import { assertGuild } from "../utils/permissions";
@@ -206,49 +206,59 @@ export async function runBlackjackWithWager(
     let balanceAfter: number | undefined;
     let sessionId = "";
 
-    const { message } = await postPublicGameMessage(interaction as SetupInteraction, async () => {
-      const session = await blackjack.startSession(
-        guildId,
-        interaction.user.id,
-        channelId,
-        amount,
-      );
-      sessionId = session.id;
-      finished = session.status === "completed";
+    try {
+      const { message } = await postPublicGameMessage(interaction as SetupInteraction, async () => {
+        const session = await blackjack.startSession(
+          guildId,
+          interaction.user.id,
+          channelId,
+          amount,
+        );
+        sessionId = session.id;
+        finished = session.status === "completed";
 
-      let outcome: string | undefined;
-      if (finished) {
-        const result = blackjack.getOutcome(session);
-        balanceAfter = await wallet.getBalance(guildId, interaction.user.id);
-        outcome = formatBlackjackOutcome(result, config, balanceAfter, true);
-      }
+        let outcome: string | undefined;
+        if (finished) {
+          const result = blackjack.getOutcome(session);
+          balanceAfter = await wallet.getBalance(guildId, interaction.user.id);
+          outcome = formatBlackjackOutcome(result, config, balanceAfter, true);
+        }
 
-      const canDouble =
-        !finished &&
-        !session.doubled &&
-        (session.playerCards as Card[]).length === 2 &&
-        balance >= amount;
+        const canDouble =
+          !finished &&
+          !session.doubled &&
+          (session.playerCards as Card[]).length === 2 &&
+          balance >= amount;
 
-      return {
-        embeds: [
-          buildBlackjackEmbed(session, config, finished, outcome, {
-            userId: interaction.user.id,
-            isPublic: true,
-            wager: amount,
+        return {
+          embeds: [
+            buildBlackjackEmbed(session, config, finished, outcome, {
+              userId: interaction.user.id,
+              isPublic: true,
+              wager: amount,
+            }),
+          ],
+          components: buildBlackjackComponents(session.id, canDouble, finished),
+        };
+      });
+
+      await blackjack.setMessageId(sessionId, message.id);
+
+      if (finished && balanceAfter != null) {
+        await interaction.followUp(
+          ephemeralOptions({
+            content: `Balance: **${formatCurrency(balanceAfter, config)}**`,
           }),
-        ],
-        components: buildBlackjackComponents(session.id, canDouble, finished),
-      };
-    });
-
-    await blackjack.setMessageId(sessionId, message.id);
-
-    if (finished && balanceAfter != null) {
-      await interaction.followUp(
-        ephemeralOptions({
-          content: `Balance: **${formatCurrency(balanceAfter, config)}**`,
-        }),
+        );
+      }
+    } catch (err) {
+      await rollbackCreatedSession(
+        err,
+        sessionId,
+        (id) => blackjack.getSession(id),
+        (session) => blackjack.expireSession(session),
       );
+      throw err;
     }
     return;
   }

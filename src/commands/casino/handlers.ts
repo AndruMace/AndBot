@@ -63,6 +63,7 @@ import {
   postPublicGameMessage,
   prefixDescription,
   publicResultFooter,
+  rollbackCreatedSession,
 } from "./publicMessage";
 import {
   resolveWagerAmount,
@@ -787,30 +788,49 @@ export async function handleCasinoMinesConfig(
 
     let sessionId = "";
 
-    const { message } = await postPublicGameMessage(interaction, async () => {
-      const session = await mines.startSession(
-        guildId,
-        interaction.user.id,
-        channelId,
-        amount,
-        mineCount,
+    try {
+      const { message } = await postPublicGameMessage(interaction, async () => {
+        const session = await mines.startSession(
+          guildId,
+          interaction.user.id,
+          channelId,
+          amount,
+          mineCount,
+        );
+        sessionId = session.id;
+
+        return {
+          embeds: [
+            buildMinesEmbed(
+              session,
+              config,
+              "Reveal tiles to find gems. Cash out before hitting a mine!",
+              interaction.user.id,
+            ),
+          ],
+          components: buildMinesComponents(session),
+        };
+      });
+
+      await mines.setMessageId(sessionId, message.id);
+    } catch (err) {
+      await rollbackCreatedSession(
+        err,
+        sessionId,
+        (id) => mines.getSession(id),
+        (session) => mines.expireSession(session),
       );
-      sessionId = session.id;
-
-      return {
-        embeds: [
-          buildMinesEmbed(
-            session,
-            config,
-            "Reveal tiles to find gems. Cash out before hitting a mine!",
-            interaction.user.id,
-          ),
-        ],
-        components: buildMinesComponents(session),
-      };
-    });
-
-    await mines.setMessageId(sessionId, message.id);
+      if (err instanceof BetValidationError || err instanceof InsufficientFundsError || err instanceof MinesSessionError) {
+        const payload = { content: err.message };
+        if (interaction.deferred || interaction.replied) {
+          await interaction.editReply(payload);
+        } else {
+          await interaction.reply(ephemeralOptions(payload));
+        }
+        return;
+      }
+      throw err;
+    }
   } catch (err) {
     if (err instanceof BetValidationError || err instanceof InsufficientFundsError || err instanceof MinesSessionError) {
       const payload = { content: err.message };

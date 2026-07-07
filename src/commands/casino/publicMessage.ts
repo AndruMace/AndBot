@@ -76,6 +76,32 @@ type PublicPayload = {
 
 export type PublicPayloadFactory = () => Promise<PublicPayload>;
 
+export class PublicGameMessageError extends Error {
+  constructor(
+    message: string,
+    public readonly publishedMessageId?: string,
+  ) {
+    super(message);
+    this.name = "PublicGameMessageError";
+  }
+}
+
+/** Refund and close a session when posting the public game message failed before publish. */
+export async function rollbackCreatedSession<T extends { status: string }>(
+  err: unknown,
+  sessionId: string | undefined,
+  getSession: (id: string) => Promise<T | null>,
+  expireSession: (session: T) => Promise<void>,
+): Promise<void> {
+  if (!sessionId) return;
+  if (err instanceof PublicGameMessageError && err.publishedMessageId) return;
+
+  const session = await getSession(sessionId);
+  if (session?.status === "active") {
+    await expireSession(session);
+  }
+}
+
 export async function postPublicGameMessage(
   interaction: SetupInteraction,
   payload: PublicPayload | PublicPayloadFactory,
@@ -87,19 +113,26 @@ export async function postPublicGameMessage(
 
   await deferSetupInteraction(interaction);
 
-  const resolved = typeof payload === "function" ? await payload() : payload;
+  let message: Message | undefined;
 
-  const message = await channel.send({
-    content: resolved.content ?? undefined,
-    embeds: resolved.embeds ?? [],
-    components: resolved.components ?? [],
-  });
+  try {
+    const resolved = typeof payload === "function" ? await payload() : payload;
 
-  await finalizeSetupInteraction(interaction);
+    message = await channel.send({
+      content: resolved.content ?? undefined,
+      embeds: resolved.embeds ?? [],
+      components: resolved.components ?? [],
+    });
+
+    await finalizeSetupInteraction(interaction);
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : "Failed to post public game message.";
+    throw new PublicGameMessageError(reason, message?.id);
+  }
 
   return {
-    message,
-    edit: (p) => message.edit(p),
+    message: message!,
+    edit: (p) => message!.edit(p),
   };
 }
 

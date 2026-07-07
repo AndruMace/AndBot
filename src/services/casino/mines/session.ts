@@ -36,7 +36,14 @@ export class MinesSessionService {
         ),
       )
       .limit(1);
-    return session ?? null;
+    if (!session) return null;
+
+    if (isExpired(session.expiresAt)) {
+      await this.expireSession(session);
+      return null;
+    }
+
+    return session;
   }
 
   async getSession(id: string): Promise<MinesSession | null> {

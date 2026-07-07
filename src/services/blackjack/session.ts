@@ -44,7 +44,14 @@ export class BlackjackSessionService {
       )
       .limit(1);
 
-    return session ?? null;
+    if (!session) return null;
+
+    if (isExpired(session.expiresAt)) {
+      await this.expireSession(session);
+      return null;
+    }
+
+    return session;
   }
 
   async startSession(

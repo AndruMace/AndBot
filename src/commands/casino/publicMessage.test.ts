@@ -4,6 +4,8 @@ import {
   buildLotteryPublicDescription,
   prefixDescription,
   publicResultFooter,
+  PublicGameMessageError,
+  rollbackCreatedSession,
 } from "./publicMessage";
 import { formatPresentationOutcome, type PresentationContext } from "./presentations";
 
@@ -70,5 +72,31 @@ describe("publicMessage", () => {
   test("formatPresentationOutcome includes balance when private", () => {
     const footer = formatPresentationOutcome(undefined, 100, 200, config, { balance: 500 });
     expect(footer).toContain("Balance");
+  });
+
+  test("rollbackCreatedSession expires unpublished sessions", async () => {
+    let expired = false;
+    await rollbackCreatedSession(
+      new Error("channel send failed"),
+      "session-1",
+      async () => ({ status: "active" }),
+      async () => {
+        expired = true;
+      },
+    );
+    expect(expired).toBe(true);
+  });
+
+  test("rollbackCreatedSession skips when message was published", async () => {
+    let expired = false;
+    await rollbackCreatedSession(
+      new PublicGameMessageError("ack failed", "msg-123"),
+      "session-1",
+      async () => ({ status: "active" }),
+      async () => {
+        expired = true;
+      },
+    );
+    expect(expired).toBe(false);
   });
 });
