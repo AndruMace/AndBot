@@ -8,8 +8,10 @@ import {
   UserSelectMenuBuilder,
 } from "discord.js";
 import { buildButtonId } from "../../utils/buttons";
-import type { PvpGameType } from "../../db/schema";
+import type { PvpGameType, PvpMatchFormat } from "../../db/schema";
+import type { Config } from "../../config";
 import type { RecentOpponentChoice } from "../../services/pvp/recentOpponents";
+import { getMaxAffordableWager } from "../casino/wagers";
 
 export function recentOpponentRows(
   game: PvpGameType,
@@ -70,4 +72,32 @@ export function opponentUsernameButtonRow(game: PvpGameType): ActionRowBuilder<B
       .setStyle(ButtonStyle.Primary)
       .setEmoji("⌨️"),
   );
+}
+
+export function challengeCustomWagerModal(
+  game: PvpGameType,
+  opponentId: string,
+  matchFormat: PvpMatchFormat,
+  side: string,
+  config: Config,
+  balance: number,
+): ModalBuilder {
+  const max = getMaxAffordableWager(config, balance);
+  return new ModalBuilder()
+    .setCustomId(
+      buildButtonId("challenge", "modal", "bet", game, opponentId, matchFormat, side),
+    )
+    .setTitle("Custom Wager")
+    .addComponents(
+      new ActionRowBuilder<TextInputBuilder>().addComponents(
+        new TextInputBuilder()
+          .setCustomId("amount")
+          .setLabel("Wager amount")
+          .setStyle(TextInputStyle.Short)
+          .setPlaceholder(`${config.MIN_BET} – ${max.toLocaleString()}`)
+          .setRequired(true)
+          .setMinLength(1)
+          .setMaxLength(10),
+      ),
+    );
 }

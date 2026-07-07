@@ -11,6 +11,7 @@ import type { Config } from "../../config";
 import type { CasinoGame } from "./types";
 import {
   formatWagerButtonLabel,
+  getMaxAffordableWager,
   getWagerPresets,
   wagerSelectionDescription,
 } from "./wagers";
@@ -143,15 +144,21 @@ export function wagerSelectionRows(
   secondary.addComponents(
     new ButtonBuilder()
       .setCustomId(buildButtonId("casino", "custom", game))
-      .setLabel("Custom")
-      .setStyle(ButtonStyle.Secondary),
+      .setLabel("Custom Amount")
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji("✏️"),
   );
   rows.push(secondary);
 
   return rows;
 }
 
-export function customWagerModal(game: CasinoGame): ModalBuilder {
+export function customWagerModal(
+  game: CasinoGame,
+  config: Config,
+  balance: number,
+): ModalBuilder {
+  const max = getMaxAffordableWager(config, balance);
   return new ModalBuilder()
     .setCustomId(buildButtonId("casino", "modal", "custom", game))
     .setTitle("Custom Wager")
@@ -161,7 +168,7 @@ export function customWagerModal(game: CasinoGame): ModalBuilder {
           .setCustomId("amount")
           .setLabel("Wager amount")
           .setStyle(TextInputStyle.Short)
-          .setPlaceholder("Enter amount")
+          .setPlaceholder(`${config.MIN_BET} – ${max.toLocaleString()}`)
           .setRequired(true)
           .setMinLength(1)
           .setMaxLength(10),

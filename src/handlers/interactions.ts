@@ -50,6 +50,8 @@ import {
   handleChallengeMatchSelect,
   handleChallengeSideSelect,
   handleChallengeWager,
+  handleChallengeCustomWager,
+  handleChallengeCustomAmountModal,
   handleChallengeUsernamePrompt,
   handleChallengeUsernameModal,
   handleChallengeRecentOpponent,
@@ -232,6 +234,24 @@ export function registerInteractionHandler(client: Client, db: Database, config:
             );
             return;
           }
+
+          if (
+            action === "custom" &&
+            isChallengeGame(sub!) &&
+            rest[0] &&
+            rest[1]
+          ) {
+            await handleChallengeCustomWager(
+              interaction,
+              sub!,
+              rest[0],
+              rest[1] as PvpMatchFormat,
+              rest[2] ?? "-",
+              wallet,
+              config,
+            );
+            return;
+          }
         }
 
         const casinoParts = parseButtonId(interaction.customId, "casino");
@@ -269,7 +289,7 @@ export function registerInteractionHandler(client: Client, db: Database, config:
           }
 
           if (action === "custom" && isCasinoGame(sub!)) {
-            await handleCasinoCustomWager(interaction, sub!);
+            await handleCasinoCustomWager(interaction, sub!, wallet, config);
             return;
           }
 
@@ -421,6 +441,26 @@ export function registerInteractionHandler(client: Client, db: Database, config:
           await handleChallengeUsernameModal(
             interaction,
             challengeModalParts[2]!,
+            wallet,
+            config,
+          );
+          return;
+        }
+
+        if (
+          challengeModalParts?.[0] === "modal" &&
+          challengeModalParts[1] === "bet" &&
+          isChallengeGame(challengeModalParts[2]!) &&
+          challengeModalParts[3] &&
+          challengeModalParts[4]
+        ) {
+          await handleChallengeCustomAmountModal(
+            interaction,
+            challengeModalParts[2]!,
+            challengeModalParts[3],
+            challengeModalParts[4] as PvpMatchFormat,
+            challengeModalParts[5] ?? "-",
+            db,
             wallet,
             config,
           );

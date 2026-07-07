@@ -63,6 +63,7 @@ import {
 } from "./publicMessage";
 import {
   resolveWagerAmount,
+  parseCustomWagerAmount,
 } from "./wagers";
 
 function casinoEmbed(config: Config): EmbedBuilder {
@@ -503,9 +504,15 @@ export async function handleCasinoPick(
   });
 }
 
-export async function handleCasinoCustomWager(interaction: ButtonInteraction, game: CasinoGame) {
-  assertGuild(interaction);
-  await interaction.showModal(customWagerModal(game));
+export async function handleCasinoCustomWager(
+  interaction: ButtonInteraction,
+  game: CasinoGame,
+  wallet: WalletService,
+  config: Config,
+) {
+  const guildId = assertGuild(interaction);
+  const userWallet = await wallet.getOrCreateWallet(guildId, interaction.user.id);
+  await interaction.showModal(customWagerModal(game, config, userWallet.balance));
 }
 
 export async function handleCasinoWagerBet(
@@ -561,7 +568,11 @@ export async function handleCasinoCustomAmountModal(
   const guildId = assertGuild(interaction);
 
   try {
-    const amount = parseWagerAmount(interaction.fields.getTextInputValue("amount"), config);
+    const amount = parseCustomWagerAmount(
+      interaction.fields.getTextInputValue("amount"),
+      config,
+      (await wallet.getBalance(guildId, interaction.user.id)),
+    );
     await ensureFunds(wallet, guildId, interaction.user.id, amount);
 
     if (game === "lucky") {

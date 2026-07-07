@@ -1,5 +1,5 @@
 import type { Config } from "../../config";
-import { formatCurrency } from "../../utils/bets";
+import { BetValidationError, formatCurrency } from "../../utils/bets";
 import { CASINO_GAMES, type CasinoGame } from "./types";
 
 const PRESET_CANDIDATES = [50, 100, 250, 500, 1000, 2500, 5000, 10_000];
@@ -39,6 +39,42 @@ export function formatWagerButtonLabel(amount: number): string {
   return amount.toLocaleString();
 }
 
+export function getMaxAffordableWager(config: Config, balance: number): number {
+  return Math.min(balance, config.MAX_BET);
+}
+
+export function parseCustomWagerAmount(
+  raw: string,
+  config: Config,
+  balance: number,
+): number {
+  const amount = Number.parseInt(raw.trim(), 10);
+  if (Number.isNaN(amount)) {
+    throw new BetValidationError("Amount must be a whole number.");
+  }
+
+  const max = getMaxAffordableWager(config, balance);
+  if (max < config.MIN_BET) {
+    throw new BetValidationError("You cannot afford the minimum wager right now.");
+  }
+
+  if (amount < config.MIN_BET) {
+    throw new BetValidationError(
+      `Minimum wager is ${formatCurrency(config.MIN_BET, config)}.`,
+    );
+  }
+
+  if (amount > max) {
+    const cap =
+      balance < config.MAX_BET
+        ? `your balance (${formatCurrency(balance, config)})`
+        : `the maximum (${formatCurrency(config.MAX_BET, config)})`;
+    throw new BetValidationError(`Maximum wager right now is ${formatCurrency(max, config)} — capped by ${cap}.`);
+  }
+
+  return amount;
+}
+
 export function resolveWagerAmount(
   amountToken: string,
   lastWager: number | null,
@@ -68,7 +104,8 @@ export function wagerSelectionDescription(
   const gameInfo = CASINO_GAMES.find((g) => g.id === game);
   let text =
     `**${gameInfo?.emoji} ${gameInfo?.label}** — choose your wager.\n` +
-    `Balance: **${formatCurrency(balance, config)}**`;
+    `Balance: **${formatCurrency(balance, config)}**\n` +
+    `Use a preset, **Repeat**, or **Custom Amount** (up to **${formatCurrency(getMaxAffordableWager(config, balance), config)}**).`;
 
   if (lastWager && lastWager >= config.MIN_BET && lastWager <= config.MAX_BET) {
     text += `\nLast bet: **${formatCurrency(lastWager, config)}**`;

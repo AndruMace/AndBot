@@ -5,6 +5,8 @@ export {
   handleChallengeMatchSelect,
   handleChallengeSideSelect,
   handleChallengeWager,
+  handleChallengeCustomWager,
+  handleChallengeCustomAmountModal,
   handleChallengeUsernamePrompt,
   handleChallengeUsernameModal,
   handleChallengeRecentOpponent,

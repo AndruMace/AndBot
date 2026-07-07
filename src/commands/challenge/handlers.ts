@@ -22,13 +22,14 @@ import { buildButtonId } from "../../utils/buttons";
 import { ephemeralOptions } from "../../utils/discord";
 import { MemberLookupError, resolveGuildMemberByQuery } from "../../utils/guildMembers";
 import { formatMatchLabel } from "../../services/pvp/match";
-import { getWagerPresets, formatWagerButtonLabel, resolveWagerAmount } from "../casino/wagers";
+import { getWagerPresets, formatWagerButtonLabel, resolveWagerAmount, getMaxAffordableWager, parseCustomWagerAmount } from "../casino/wagers";
 import { CHALLENGE_GAMES, isChallengeGame } from "./types";
 import {
   opponentSelectRow,
   opponentUsernameButtonRow,
   opponentUsernameModal,
   recentOpponentRows,
+  challengeCustomWagerModal,
 } from "./components";
 import { getRecentOpponentChoices } from "../../services/pvp/recentOpponents";
 import type { Guild } from "discord.js";
@@ -183,6 +184,11 @@ function setupEmbed(
   if (lastWager) {
     lines.push(`Last wager: **${formatCurrency(lastWager, config)}**`);
   }
+  if (wagerReady(setup)) {
+    lines.push(
+      `Use a preset, **Repeat**, or **Custom Amount** (up to **${formatCurrency(getMaxAffordableWager(config, balance), config)}**).`,
+    );
+  }
 
   return new EmbedBuilder()
     .setColor(0xfee75c)
@@ -297,6 +303,25 @@ function setupComponents(
   if (secondary.components.length > 0) {
     rows.push(secondary);
   }
+
+  rows.push(
+    new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setCustomId(
+          buildButtonId(
+            "challenge",
+            "custom",
+            setup.game,
+            setup.opponentId,
+            setup.matchFormat,
+            setup.side ?? "-",
+          ),
+        )
+        .setLabel("Custom Amount")
+        .setStyle(ButtonStyle.Secondary)
+        .setEmoji("✏️"),
+    ),
+  );
 
   return rows;
 }
@@ -520,6 +545,87 @@ export async function handleChallengeWager(
     return;
   }
 
+  await submitChallengeWager(
+    interaction,
+    game,
+    opponentId,
+    amount,
+    matchFormat,
+    sideToken,
+    db,
+    wallet,
+    config,
+  );
+}
+
+export async function handleChallengeCustomWager(
+  interaction: ButtonInteraction,
+  game: PvpGameType,
+  opponentId: string,
+  matchFormat: PvpMatchFormat,
+  sideToken: string,
+  wallet: WalletService,
+  config: Config,
+) {
+  const guildId = assertGuild(interaction);
+  const balance = await wallet.getBalance(guildId, interaction.user.id);
+  await interaction.showModal(
+    challengeCustomWagerModal(game, opponentId, matchFormat, sideToken, config, balance),
+  );
+}
+
+export async function handleChallengeCustomAmountModal(
+  interaction: ModalSubmitInteraction,
+  game: PvpGameType,
+  opponentId: string,
+  matchFormat: PvpMatchFormat,
+  sideToken: string,
+  db: Database,
+  wallet: WalletService,
+  config: Config,
+) {
+  const guildId = assertGuild(interaction);
+
+  try {
+    const balance = await wallet.getBalance(guildId, interaction.user.id);
+    const amount = parseCustomWagerAmount(
+      interaction.fields.getTextInputValue("amount"),
+      config,
+      balance,
+    );
+
+    await submitChallengeWager(
+      interaction,
+      game,
+      opponentId,
+      amount,
+      matchFormat,
+      sideToken,
+      db,
+      wallet,
+      config,
+    );
+  } catch (err) {
+    if (err instanceof BetValidationError || err instanceof PvpChallengeError) {
+      await interaction.reply(ephemeralOptions({ content: err.message }));
+      return;
+    }
+    throw err;
+  }
+}
+
+async function submitChallengeWager(
+  interaction: ButtonInteraction | ModalSubmitInteraction,
+  game: PvpGameType,
+  opponentId: string,
+  amount: number,
+  matchFormat: PvpMatchFormat,
+  sideToken: string,
+  db: Database,
+  wallet: WalletService,
+  config: Config,
+) {
+  const guildId = assertGuild(interaction);
   const side = sideToken === "-" ? undefined : (sideToken as CoinSide);
 
   if (game === "coinflip_duel" && !side) {
@@ -558,7 +664,7 @@ export async function handleChallengeWager(
     pendingSetups.delete(pendingKey(interaction.user.id));
     pendingOpponents.delete(interaction.user.id);
 
-    await interaction.update({
+    const payload = {
       embeds: [
         new EmbedBuilder()
           .setColor(0x57f287)
@@ -567,11 +673,22 @@ export async function handleChallengeWager(
             `Your **${CHALLENGE_GAMES.find((g) => g.id === game)!.label}** challenge to <@${opponentId}> for **${formatCurrency(amount, config)}** (${formatMatchLabel(matchFormat)}) was posted in this channel.`,
           ),
       ],
-      components: [],
-    });
+      components: [] as [],
+    };
+
+    if (interaction.isModalSubmit()) {
+      await interaction.reply({ ...payload, ephemeral: true });
+    } else {
+      await interaction.update(payload);
+    }
   } catch (err) {
     if (err instanceof BetValidationError || err instanceof PvpChallengeError) {
-      await interaction.reply(ephemeralOptions({ content: err.message }));
+      const reply = ephemeralOptions({ content: err.message });
+      if (interaction.isModalSubmit()) {
+        await interaction.reply(reply);
+      } else {
+        await interaction.reply(reply);
+      }
       return;
     }
     throw err;
