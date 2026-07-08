@@ -1,18 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import {
-  HI_LO_MAX_STREAK,
-  HI_LO_TARGET_RTP,
+  HI_LO_DECK_CLEAR_BONUS_MULT,
+  HI_LO_STREAK_STEP,
   canGuess,
   cardRankValue,
+  choiceHasWinningOutcomes,
   countOutcomes,
-  createHiLoDeck,
-  dealHiLoStart,
-  getHiLoActionPreview,
-  getHiLoStepExpectedRtp,
-  getStepMultiplier,
-  getStepProbability,
+  getHiLoNextPotMultiple,
+  getHiLoPotMultiple,
   resolveHiLoGuess,
-  simulateHiLoRtp,
 } from "./hilo";
 import type { Card } from "../blackjack/engine";
 
@@ -32,48 +28,31 @@ describe("hilo engine", () => {
       tie: 1,
       total: 4,
     });
-    expect(getStepProbability(deck, currentRank, "higher")).toBe(0.25);
-    expect(getStepProbability(deck, currentRank, "lower")).toBe(0.5);
   });
 
-  test("step multiplier prices each choice at target RTP", () => {
-    const deck = createHiLoDeck();
-    const { currentCard, remainingDeck } = dealHiLoStart(deck);
-    const currentRank = cardRankValue(currentCard);
-
-    for (const choice of ["higher", "lower"] as const) {
-      const rtp = getHiLoStepExpectedRtp(remainingDeck, currentRank, choice);
-      expect(rtp).toBeCloseTo(HI_LO_TARGET_RTP, 10);
-    }
+  test("streak payout schedule adds 0.5x per correct guess", () => {
+    expect(getHiLoPotMultiple(0)).toBe(1);
+    expect(getHiLoPotMultiple(1)).toBe(1 + HI_LO_STREAK_STEP);
+    expect(getHiLoPotMultiple(2)).toBe(1 + HI_LO_STREAK_STEP * 2);
+    expect(getHiLoNextPotMultiple(0)).toBe(1.5);
+    expect(getHiLoNextPotMultiple(1)).toBe(2);
   });
 
-  test("getStepMultiplier is target divided by probability", () => {
-    expect(getStepMultiplier(0.5)).toBeCloseTo(HI_LO_TARGET_RTP / 0.5, 10);
+  test("deck-clear bonus doubles the streak payout", () => {
+    expect(getHiLoPotMultiple(3, true)).toBe((1 + HI_LO_STREAK_STEP * 3) * HI_LO_DECK_CLEAR_BONUS_MULT);
   });
 
-  test("canGuess respects streak cap and deck exhaustion", () => {
-    expect(canGuess(0, 10)).toBe(true);
-    expect(canGuess(HI_LO_MAX_STREAK, 10)).toBe(false);
-    expect(canGuess(0, 0)).toBe(false);
+  test("canGuess only depends on cards remaining", () => {
+    expect(canGuess(10)).toBe(true);
+    expect(canGuess(0)).toBe(false);
   });
 
-  test("preview multipliers match step pricing", () => {
+  test("choice availability follows winning outcomes", () => {
     const deck: Card[] = ["2H", "3D", "KC"];
     const currentRank = 7;
-    const preview = getHiLoActionPreview(deck, currentRank);
-    expect(preview.higherMult).toBeCloseTo(getStepMultiplier(preview.higherP), 10);
-    expect(preview.lowerMult).toBeCloseTo(getStepMultiplier(preview.lowerP), 10);
-  });
-
-  test("forced one-step RTP is near target", () => {
-    const rtp = simulateHiLoRtp("forced_one", 8000, 100);
-    expect(rtp).toBeGreaterThan(1.02);
-    expect(rtp).toBeLessThan(1.06);
-  });
-
-  test("always-press RTP stays in a fun-but-bounded band", () => {
-    const rtp = simulateHiLoRtp("always_press", 8000, 100);
-    expect(rtp).toBeGreaterThan(1.0);
-    expect(rtp).toBeLessThan(1.12);
+    expect(choiceHasWinningOutcomes(deck, currentRank, "higher")).toBe(true);
+    expect(choiceHasWinningOutcomes(deck, currentRank, "lower")).toBe(true);
+    expect(choiceHasWinningOutcomes(["KC"], 13, "higher")).toBe(false);
+    expect(choiceHasWinningOutcomes(["2H"], 1, "lower")).toBe(false);
   });
 });

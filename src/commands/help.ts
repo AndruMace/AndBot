@@ -31,7 +31,7 @@ export async function handleHelp(
           "**Coinflip** — 50/50; double your wager",
           "**Blackjack** — Beat the dealer; natural 21 pays 3:2",
           "**Slots** — 5 reels, 7 symbols; match 3–4 for pays (~100% RTP). Five of a kind wins the progressive jackpot (90% of net slot losses since the last hit)",
-          "**Hi-Lo** — Build a streak on a single deck; each win scales the pot by fair odds (~105%). Cash out anytime or bust on a wrong guess.",
+          "**Hi-Lo** — Build a streak on a single deck (+0.5× per correct guess). Cash out anytime, bust on a wrong guess, or clear the deck for a hidden bonus.",
           "**Lucky Number** — Pick 1–100; exact match 25x, close guesses 2–5x",
           "**Mines** — Reveal gems, avoid mines, cash out anytime",
           "**Plinko** — Drop the chip; land in buckets up to 5x",

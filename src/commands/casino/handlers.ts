@@ -26,7 +26,7 @@ import { BetValidationError, formatCurrency } from "../../utils/bets";
 import { buildButtonId } from "../../utils/buttons";
 import { ephemeralOptions } from "../../utils/discord";
 import { formatDuration } from "../../utils/time";
-import { formatHiLoCard, type HiLoChoice } from "../../services/casino/hilo";
+import { formatHiLoCard, HI_LO_DECK_CLEAR_MESSAGE, type HiLoChoice } from "../../services/casino/hilo";
 import {
   MINES_COLUMNS,
   MINES_ROWS,
@@ -1064,7 +1064,7 @@ export async function handleCasinoHiLoGuess(
   }
 
   try {
-    const { session: updated, drawnCard, won } = await hilo.guess(session, choice);
+    const { session: updated, drawnCard, won, deckCleared } = await hilo.guess(session, choice);
 
     if (!won) {
       const balance = await wallet.getBalance(updated.guildId, updated.userId);
@@ -1083,6 +1083,30 @@ export async function handleCasinoHiLoGuess(
             userId: updated.userId,
             game: "hilo",
             amount: updated.wager,
+          }),
+        ],
+      });
+      return;
+    }
+
+    if (deckCleared) {
+      const { session: cashed, payout } = await hilo.cashOut(updated, { deckClearBonus: true });
+      const balance = await wallet.getBalance(cashed.guildId, cashed.userId);
+      await interaction.update({
+        embeds: [
+          buildHiLoEmbed(
+            cashed,
+            config,
+            `Drew **${formatHiLoCard(drawnCard)}** — correct!\n\n${HI_LO_DECK_CLEAR_MESSAGE}\n\n💰 **Cashed out!** Won **${formatCurrency(payout, config)}**\n\n${publicResultFooter(cashed.wager, payout, config, { balance })}`,
+            cashed.userId,
+          ),
+        ],
+        components: [
+          ...hiloComponentsForSession(cashed),
+          ...casinoPostGameComponents({
+            userId: cashed.userId,
+            game: "hilo",
+            amount: cashed.wager,
           }),
         ],
       });

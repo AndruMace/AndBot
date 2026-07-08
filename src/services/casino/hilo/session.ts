@@ -8,10 +8,10 @@ import {
   canGuess,
   calculateHiLoPayout,
   cardRankValue,
+  choiceHasWinningOutcomes,
   createHiLoDeck,
   dealHiLoStart,
-  getStepMultiplier,
-  getStepProbability,
+  getHiLoPotMultiple,
   resolveHiLoGuess,
   type HiLoChoice,
 } from "../hilo";
@@ -27,6 +27,11 @@ export type HiloGuessResult = {
   session: HiloSession;
   drawnCard: string;
   won: boolean;
+  deckCleared: boolean;
+};
+
+export type HiloCashOutOptions = {
+  deckClearBonus?: boolean;
 };
 
 export class HiloSessionService {
@@ -92,6 +97,7 @@ export class HiloSessionService {
         wager,
         currentCard,
         remainingDeck,
+        potMultiple: getHiLoPotMultiple(0),
         expiresAt: addMinutes(this.config.BLACKJACK_SESSION_TIMEOUT_MINUTES),
       })
       .returning();
@@ -117,13 +123,12 @@ export class HiloSessionService {
   async guess(session: HiloSession, choice: HiLoChoice): Promise<HiloGuessResult> {
     const active = await this.ensureActive(session);
 
-    if (!canGuess(active.streak, active.remainingDeck.length)) {
-      throw new HiloSessionError("Cash out — you cannot guess again this round.");
+    if (!canGuess(active.remainingDeck.length)) {
+      throw new HiloSessionError("No cards left — cash out to collect your winnings.");
     }
 
     const currentRank = cardRankValue(active.currentCard);
-    const p = getStepProbability(active.remainingDeck, currentRank, choice);
-    if (p <= 0) {
+    if (!choiceHasWinningOutcomes(active.remainingDeck, currentRank, choice)) {
       throw new HiloSessionError("That guess has no winning outcomes left.");
     }
 
@@ -141,16 +146,17 @@ export class HiloSessionService {
         .set({
           status: "busted",
           remainingDeck,
-          streak: active.streak,
+          potMultiple: getHiLoPotMultiple(active.streak),
         })
         .where(eq(hiloSessions.id, active.id))
         .returning();
 
-      return { session: updated!, drawnCard, won: false };
+      return { session: updated!, drawnCard, won: false, deckCleared: false };
     }
 
-    const potMultiple = active.potMultiple * getStepMultiplier(p);
     const streak = active.streak + 1;
+    const potMultiple = getHiLoPotMultiple(streak);
+    const deckCleared = remainingDeck.length === 0;
 
     const [updated] = await this.db
       .update(hiloSessions)
@@ -164,21 +170,29 @@ export class HiloSessionService {
       .where(eq(hiloSessions.id, active.id))
       .returning();
 
-    return { session: updated!, drawnCard, won: true };
+    return { session: updated!, drawnCard, won: true, deckCleared };
   }
 
-  async cashOut(session: HiloSession): Promise<{ session: HiloSession; payout: number }> {
+  async cashOut(
+    session: HiloSession,
+    options: HiloCashOutOptions = {},
+  ): Promise<{ session: HiloSession; payout: number }> {
     const active = await this.ensureActive(session);
-    const payout = calculateHiLoPayout(active.wager, active.potMultiple);
+    const deckClearBonus =
+      options.deckClearBonus ??
+      (active.remainingDeck.length === 0 && active.streak > 0);
+    const potMultiple = getHiLoPotMultiple(active.streak, deckClearBonus);
+    const payout = calculateHiLoPayout(active.wager, potMultiple);
 
     await this.wallet.credit(active.guildId, active.userId, payout, "hilo_win", active.id, {
-      potMultiple: active.potMultiple,
+      potMultiple,
       streak: active.streak,
+      deckClearBonus,
     });
 
     const [updated] = await this.db
       .update(hiloSessions)
-      .set({ status: "cashed_out" })
+      .set({ status: "cashed_out", potMultiple })
       .where(eq(hiloSessions.id, active.id))
       .returning();
 

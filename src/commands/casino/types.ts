@@ -21,7 +21,7 @@ export const CASINO_GAMES: {
   { id: "coinflip", label: "Coinflip", emoji: "🪙", description: "50/50 — double your wager." },
   { id: "blackjack", label: "Blackjack", emoji: "🃏", description: "Beat the dealer to 21." },
   { id: "slots", label: "Slots", emoji: "🎰", description: "5 reels · 7 symbols · progressive jackpot." },
-  { id: "hilo", label: "Hi-Lo", emoji: "📈", description: "Build a streak on one deck; cash out or bust." },
+  { id: "hilo", label: "Hi-Lo", emoji: "📈", description: "Streak guesses on one deck; +0.5× per win. Cash out or bust." },
   { id: "lucky", label: "Lucky #", emoji: "🎯", description: "Pick 1–100; exact match pays 25x." },
   { id: "mines", label: "Mines", emoji: "💣", description: "Reveal gems, avoid mines, cash out anytime." },
   { id: "plinko", label: "Plinko", emoji: "🔻", description: "Drop the chip — land up to 5x." },

@@ -4,21 +4,17 @@ import type { HiloSession } from "../../db/schema";
 import { formatCurrency } from "../../utils/bets";
 import { buildButtonId } from "../../utils/buttons";
 import {
-  HI_LO_MAX_STREAK,
   calculateHiLoPayout,
   canGuess,
   cardRankValue,
+  choiceHasWinningOutcomes,
   formatHiLoCard,
-  getHiLoActionPreview,
+  formatHiLoNextPayoutLabel,
+  getHiLoPotMultiple,
 } from "../../services/casino/hilo";
 import { buildGameHeader, postPublicGameMessage, rollbackCreatedSession } from "./publicMessage";
 import type { HiloSessionService } from "../../services/casino/hilo/session";
 import type { ButtonInteraction, ModalSubmitInteraction } from "discord.js";
-
-function formatStepMultiplier(mult: number): string {
-  if (mult <= 0) return "—";
-  return `×${mult.toFixed(2)}`;
-}
 
 export function buildHiLoEmbed(
   session: HiloSession,
@@ -26,7 +22,9 @@ export function buildHiLoEmbed(
   footer?: string,
   userId?: string,
 ): EmbedBuilder {
-  const potential = calculateHiLoPayout(session.wager, session.potMultiple);
+  const potMultiple =
+    session.status === "cashed_out" ? session.potMultiple : getHiLoPotMultiple(session.streak);
+  const potential = calculateHiLoPayout(session.wager, potMultiple);
 
   let description = "";
   if (userId) {
@@ -35,7 +33,8 @@ export function buildHiLoEmbed(
 
   description +=
     `Current card: **${formatHiLoCard(session.currentCard)}**\n` +
-    `Pot: **${formatCurrency(potential, config)}** (**${session.potMultiple.toFixed(2)}×**) · Streak: **${session.streak}/${HI_LO_MAX_STREAK}**\n` +
+    `Pot: **${formatCurrency(potential, config)}** (**${potMultiple.toFixed(2)}×**) · Streak: **${session.streak}**\n` +
+    `Cards left: **${session.remainingDeck.length}**\n` +
     `Pick higher or lower — or cash out.` +
     (footer ? `\n\n${footer}` : "");
 
@@ -51,20 +50,22 @@ export function buildHiLoEmbed(
 
 export function hiloComponentsForSession(session: HiloSession): ActionRowBuilder<ButtonBuilder>[] {
   const currentRank = cardRankValue(session.currentCard);
-  const preview = getHiLoActionPreview(session.remainingDeck, currentRank);
-  const guessAllowed = session.status === "active" && canGuess(session.streak, session.remainingDeck.length);
+  const guessAllowed = session.status === "active" && canGuess(session.remainingDeck.length);
+  const nextLabel = formatHiLoNextPayoutLabel(session.streak);
+  const higherOk = choiceHasWinningOutcomes(session.remainingDeck, currentRank, "higher");
+  const lowerOk = choiceHasWinningOutcomes(session.remainingDeck, currentRank, "lower");
 
   const guessRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId(buildButtonId("casino", "hl", "higher", session.id))
-      .setLabel(`Higher (${formatStepMultiplier(preview.higherMult)})`)
+      .setLabel(`Higher (${nextLabel})`)
       .setStyle(ButtonStyle.Success)
-      .setDisabled(!guessAllowed || preview.higherMult <= 0),
+      .setDisabled(!guessAllowed || !higherOk),
     new ButtonBuilder()
       .setCustomId(buildButtonId("casino", "hl", "lower", session.id))
-      .setLabel(`Lower (${formatStepMultiplier(preview.lowerMult)})`)
+      .setLabel(`Lower (${nextLabel})`)
       .setStyle(ButtonStyle.Danger)
-      .setDisabled(!guessAllowed || preview.lowerMult <= 0),
+      .setDisabled(!guessAllowed || !lowerOk),
   );
 
   const cashRow = new ActionRowBuilder<ButtonBuilder>().addComponents(

@@ -5,8 +5,14 @@ import {
   type Card,
 } from "../blackjack/engine";
 
-export const HI_LO_TARGET_RTP = 1.05;
-export const HI_LO_MAX_STREAK = 2;
+/** Added to the base 1× for each correct guess in a row. */
+export const HI_LO_STREAK_STEP = 0.5;
+
+/** Hidden multiplier when a player correctly guesses through the entire remaining deck. */
+export const HI_LO_DECK_CLEAR_BONUS_MULT = 2;
+
+export const HI_LO_DECK_CLEAR_MESSAGE =
+  "🃏 **Deck cleared!** You guessed through the entire deck — hidden **2×** bonus applied.";
 
 export type HiLoChoice = "higher" | "lower";
 
@@ -80,9 +86,30 @@ export function getStepProbability(
   return choice === "higher" ? higher / total : lower / total;
 }
 
-export function getStepMultiplier(p: number): number {
-  if (p <= 0) return 0;
-  return HI_LO_TARGET_RTP / p;
+export function choiceHasWinningOutcomes(
+  remainingDeck: Card[],
+  currentRank: number,
+  choice: HiLoChoice,
+): boolean {
+  return getStepProbability(remainingDeck, currentRank, choice) > 0;
+}
+
+/** Total payout multiple for `streak` correct guesses (0 = cash out before guessing → 1×). */
+export function getHiLoPotMultiple(streak: number, deckClearBonus = false): number {
+  let multiple = 1 + HI_LO_STREAK_STEP * streak;
+  if (deckClearBonus) {
+    multiple *= HI_LO_DECK_CLEAR_BONUS_MULT;
+  }
+  return multiple;
+}
+
+/** Payout multiple after one more correct guess from the current streak. */
+export function getHiLoNextPotMultiple(streak: number): number {
+  return getHiLoPotMultiple(streak + 1, false);
+}
+
+export function formatHiLoNextPayoutLabel(streak: number): string {
+  return `→ ${getHiLoNextPotMultiple(streak).toFixed(2)}×`;
 }
 
 export function resolveHiLoGuess(
@@ -102,111 +129,6 @@ export function calculateHiLoPayout(wager: number, potMultiple: number): number 
   return Math.max(0, Math.floor(wager * potMultiple));
 }
 
-export function getHiLoStepExpectedRtp(
-  remainingDeck: Card[],
-  currentRank: number,
-  choice: HiLoChoice,
-): number {
-  const p = getStepProbability(remainingDeck, currentRank, choice);
-  if (p <= 0) return 0;
-  return p * getStepMultiplier(p);
-}
-
-export function getHiLoActionPreview(
-  remainingDeck: Card[],
-  currentRank: number,
-): {
-  higherP: number;
-  lowerP: number;
-  higherMult: number;
-  lowerMult: number;
-} {
-  const higherP = getStepProbability(remainingDeck, currentRank, "higher");
-  const lowerP = getStepProbability(remainingDeck, currentRank, "lower");
-  return {
-    higherP,
-    lowerP,
-    higherMult: higherP > 0 ? getStepMultiplier(higherP) : 0,
-    lowerMult: lowerP > 0 ? getStepMultiplier(lowerP) : 0,
-  };
-}
-
-export function canGuess(streak: number, remainingDeckLength: number): boolean {
-  return streak < HI_LO_MAX_STREAK && remainingDeckLength > 0;
-}
-
-export function pickOptimalChoice(
-  remainingDeck: Card[],
-  currentRank: number,
-): HiLoChoice {
-  const { higherP, lowerP } = getHiLoActionPreview(remainingDeck, currentRank);
-  return higherP >= lowerP ? "higher" : "lower";
-}
-
-export type HiLoRtpStrategy = "forced_one" | "cash_after_2" | "cash_after_3" | "always_press";
-
-function runHiLoSession(
-  wager: number,
-  strategy: HiLoRtpStrategy,
-): number {
-  const deck = createHiLoDeck();
-  const { currentCard, remainingDeck: initialDeck } = dealHiLoStart(deck);
-  let currentRank = cardRankValue(currentCard);
-  let remainingDeck = [...initialDeck];
-  let potMultiple = 1;
-  let streak = 0;
-
-  const cashOut = () => calculateHiLoPayout(wager, potMultiple);
-
-  const targetStreak =
-    strategy === "forced_one"
-      ? 1
-      : strategy === "cash_after_2"
-        ? 2
-        : strategy === "cash_after_3"
-          ? 3
-          : HI_LO_MAX_STREAK;
-
-  while (true) {
-    if (!canGuess(streak, remainingDeck.length)) {
-      return cashOut();
-    }
-
-    const choice = pickOptimalChoice(remainingDeck, currentRank);
-    const p = getStepProbability(remainingDeck, currentRank, choice);
-    const [nextCard, ...rest] = remainingDeck;
-    if (!nextCard) return cashOut();
-
-    remainingDeck = rest;
-    const nextRank = cardRankValue(nextCard);
-    const won = resolveHiLoGuess(currentRank, nextRank, choice);
-
-    if (!won) {
-      return 0;
-    }
-
-    potMultiple *= getStepMultiplier(p);
-    streak++;
-    currentRank = nextRank;
-
-    if (strategy !== "always_press" && streak >= targetStreak) {
-      return cashOut();
-    }
-
-    if (strategy === "always_press" && streak >= HI_LO_MAX_STREAK) {
-      return cashOut();
-    }
-  }
-}
-
-export function simulateHiLoRtp(
-  strategy: HiLoRtpStrategy,
-  iterations: number,
-  wager = 100,
-): number {
-  let totalReturn = 0;
-  for (let i = 0; i < iterations; i++) {
-    totalReturn += runHiLoSession(wager, strategy);
-  }
-  return totalReturn / (iterations * wager);
+export function canGuess(remainingDeckLength: number): boolean {
+  return remainingDeckLength > 0;
 }
