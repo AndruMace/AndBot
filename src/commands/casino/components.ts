@@ -169,27 +169,6 @@ export function coinflipSideRow(userId: string, amount: number): ActionRowBuilde
   );
 }
 
-export function hiloChoiceRow(
-  userId: string,
-  amount: number,
-  currentRank: number,
-): ActionRowBuilder<ButtonBuilder> {
-  return new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder()
-      .setCustomId(
-        buildButtonId("casino", "hl", "higher", userId, String(amount), String(currentRank)),
-      )
-      .setLabel("Higher")
-      .setStyle(ButtonStyle.Success),
-    new ButtonBuilder()
-      .setCustomId(
-        buildButtonId("casino", "hl", "lower", userId, String(amount), String(currentRank)),
-      )
-      .setLabel("Lower")
-      .setStyle(ButtonStyle.Danger),
-  );
-}
-
 export function minesCountRow(userId: string, amount: number): ActionRowBuilder<ButtonBuilder> {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()

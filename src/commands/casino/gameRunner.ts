@@ -14,7 +14,8 @@ import {
   SLOTS_FRAME_DELAY_MS,
 } from "../../services/casino/slots";
 import type { SlotsJackpotService } from "../../services/casino/slotsJackpot";
-import { drawCard } from "../../services/casino/hilo";
+import type { HiloSessionService } from "../../services/casino/hilo/session";
+import { startHiLoPublicSession } from "./hiloUi";
 import { rollLuckyNumber } from "../../services/casino/lucky";
 import {
   calculateKenoPayout,
@@ -53,7 +54,6 @@ import {
 import { getCasinoGameLabel, type CasinoGame } from "./types";
 import {
   coinflipSideRow,
-  hiloChoiceRow,
   minesCountRow,
   luckyNumberRows,
   kenoPickRows,
@@ -336,6 +336,7 @@ export async function executeCasinoGame(
   wallet: WalletService,
   blackjack: BlackjackSessionService,
   slotsJackpot: SlotsJackpotService,
+  hilo: HiloSessionService,
   config: Config,
   luckyPick?: number,
 ) {
@@ -411,21 +412,19 @@ export async function executeCasinoGame(
     }
 
     case "hilo": {
-      await postPublicGameMessage(interaction, async () => {
-        await wallet.debit(guildId, userId, amount, "hilo_bet");
-        const card = drawCard();
-        const body =
-          `Current card: **${card.label}**\n\nWill the next card be higher or lower?`;
-        return {
-          embeds: [
-            new EmbedBuilder()
-              .setColor(0x3498db)
-              .setTitle("Hi-Lo")
-              .setDescription(describePublic(userId, game, amount, config, body)),
-          ],
-          components: [hiloChoiceRow(userId, amount, card.rank)],
-        };
-      });
+      const channelId = interaction.channelId;
+      if (!channelId) {
+        throw new Error("Use this in a server channel.");
+      }
+      await startHiLoPublicSession(
+        interaction,
+        hilo,
+        guildId,
+        userId,
+        channelId,
+        amount,
+        config,
+      );
       return;
     }
 
@@ -548,9 +547,10 @@ export async function executeLuckyWithPick(
   wallet: WalletService,
   blackjack: BlackjackSessionService,
   slotsJackpot: SlotsJackpotService,
+  hilo: HiloSessionService,
   config: Config,
 ) {
-  await executeCasinoGame(interaction, "lucky", amount, wallet, blackjack, slotsJackpot, config, pick);
+  await executeCasinoGame(interaction, "lucky", amount, wallet, blackjack, slotsJackpot, hilo, config, pick);
 }
 
 export function randomLuckyPick(): number {

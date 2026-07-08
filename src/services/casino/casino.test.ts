@@ -10,7 +10,7 @@ import {
   SLOTS_SPIN_TICKS,
   type SlotReels,
 } from "./slots";
-import { resolveHiLo } from "./hilo";
+import { resolveHiLoGuess } from "./hilo";
 import { calculateLuckyPayout } from "./lucky";
 import {
   buildCoinflipFrames,
@@ -89,12 +89,12 @@ describe("slots", () => {
 
 describe("hilo", () => {
   test("higher wins when next is higher", () => {
-    expect(resolveHiLo(5, 10, "higher")).toBe(true);
-    expect(resolveHiLo(5, 10, "lower")).toBe(false);
+    expect(resolveHiLoGuess(5, 10, "higher")).toBe(true);
+    expect(resolveHiLoGuess(5, 10, "lower")).toBe(false);
   });
 
   test("tie loses", () => {
-    expect(resolveHiLo(5, 5, "higher")).toBe(false);
+    expect(resolveHiLoGuess(5, 5, "higher")).toBe(false);
   });
 });
 

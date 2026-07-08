@@ -64,6 +64,13 @@
       "when": 1783250000000,
       "tag": "0008_roulette",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1783260000000,
+      "tag": "0009_hilo_sessions",
+      "breakpoints": true
     }
   ]
 }

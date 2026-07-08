@@ -5,6 +5,7 @@ import { createWalletService } from "../services/wallet";
 import { createClaimsService } from "../services/claims";
 import { createBlackjackSessionService } from "../services/blackjack/session";
 import { createMinesSessionService } from "../services/casino/mines/session";
+import { createHiloSessionService } from "../services/casino/hilo/session";
 import { createLotteryService } from "../services/lottery/rounds";
 import { createSlotsJackpotService } from "../services/casino/slotsJackpot";
 import { handleBalance, handleDaily, handleWeekly, handlePay } from "../commands/economy";
@@ -40,7 +41,8 @@ import {
   handleCasinoKenoCustomPrompt,
   handleCasinoCoinflipSide,
   handleCasinoRouletteBet,
-  handleCasinoHiLo,
+  handleCasinoHiLoGuess,
+  handleCasinoHiLoCashout,
   handleCasinoMinesConfig,
   handleCasinoMinesReveal,
   handleCasinoMinesCashout,
@@ -69,7 +71,6 @@ import {
 } from "../commands/challenge";
 import type { PvpMatchFormat } from "../db/schema";
 import type { CoinSide } from "../services/pvp/challenges";
-import type { HiLoChoice } from "../services/casino/hilo";
 import { parseButtonId } from "../utils/buttons";
 import { replyInteractionError } from "../utils/interactionError";
 import type { RpsChoice } from "../services/pvp/challenges";
@@ -79,6 +80,7 @@ export function registerInteractionHandler(client: Client, db: Database, config:
   const claims = createClaimsService(wallet, config);
   const blackjack = createBlackjackSessionService(db, wallet, config);
   const mines = createMinesSessionService(db, wallet, config);
+  const hilo = createHiloSessionService(db, wallet, config);
   const lottery = createLotteryService(db, wallet, config);
   const slotsJackpot = createSlotsJackpotService(db);
 
@@ -284,6 +286,7 @@ export function registerInteractionHandler(client: Client, db: Database, config:
                 blackjack,
                 slotsJackpot,
                 mines,
+                hilo,
                 config,
               );
               return;
@@ -342,6 +345,7 @@ export function registerInteractionHandler(client: Client, db: Database, config:
               wallet,
               blackjack,
               slotsJackpot,
+              hilo,
               config,
             );
             return;
@@ -358,6 +362,7 @@ export function registerInteractionHandler(client: Client, db: Database, config:
                 wallet,
                 blackjack,
                 slotsJackpot,
+                hilo,
                 config,
               );
             }
@@ -414,18 +419,14 @@ export function registerInteractionHandler(client: Client, db: Database, config:
             return;
           }
 
-          if (action === "hl" && rest.length >= 3) {
-            const choice = sub as HiLoChoice;
-            if (choice === "higher" || choice === "lower") {
-              await handleCasinoHiLo(
-                interaction,
-                choice,
-                rest[0]!,
-                rest[1]!,
-                rest[2]!,
-                wallet,
-                config,
-              );
+          if (action === "hl") {
+            if ((sub === "higher" || sub === "lower") && rest[0]) {
+              await handleCasinoHiLoGuess(interaction, sub, rest[0], hilo, wallet, config);
+              return;
+            }
+            if (sub === "out" && rest[0]) {
+              await handleCasinoHiLoCashout(interaction, rest[0], hilo, wallet, config);
+              return;
             }
             return;
           }
@@ -561,6 +562,7 @@ export function registerInteractionHandler(client: Client, db: Database, config:
               wallet,
               blackjack,
               slotsJackpot,
+              hilo,
               config,
             );
             return;
@@ -572,6 +574,7 @@ export function registerInteractionHandler(client: Client, db: Database, config:
               wallet,
               blackjack,
               slotsJackpot,
+              hilo,
               config,
             );
             return;

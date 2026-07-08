@@ -11,6 +11,7 @@ import {
   integer,
   jsonb,
   uuid,
+  real,
 } from "drizzle-orm/pg-core";
 
 export const transactionTypeEnum = pgEnum("transaction_type", [
@@ -29,6 +30,7 @@ export const transactionTypeEnum = pgEnum("transaction_type", [
   "slots_jackpot_win",
   "hilo_bet",
   "hilo_win",
+  "hilo_refund",
   "lucky_bet",
   "lucky_win",
   "mines_bet",
@@ -52,6 +54,13 @@ export const transactionTypeEnum = pgEnum("transaction_type", [
 ]);
 
 export const minesSessionStatusEnum = pgEnum("mines_session_status", [
+  "active",
+  "busted",
+  "cashed_out",
+  "expired",
+]);
+
+export const hiloSessionStatusEnum = pgEnum("hilo_session_status", [
   "active",
   "busted",
   "cashed_out",
@@ -207,6 +216,32 @@ export const minesSessions = pgTable(
   ],
 );
 
+export const hiloSessions = pgTable(
+  "hilo_sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    guildId: text("guild_id").notNull(),
+    userId: text("user_id").notNull(),
+    channelId: text("channel_id").notNull(),
+    messageId: text("message_id"),
+    wager: bigint("wager", { mode: "number" }).notNull(),
+    currentCard: text("current_card").notNull(),
+    remainingDeck: jsonb("remaining_deck").$type<string[]>().notNull(),
+    potMultiple: real("pot_multiple").notNull().default(1),
+    streak: integer("streak").notNull().default(0),
+    status: hiloSessionStatusEnum("status").notNull().default("active"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("hilo_sessions_guild_user_status_idx").on(
+      table.guildId,
+      table.userId,
+      table.status,
+    ),
+  ],
+);
+
 export const lotteryRounds = pgTable(
   "lottery_rounds",
   {
@@ -266,6 +301,7 @@ export type PvpGameType = (typeof pvpGameTypeEnum.enumValues)[number];
 export type PvpMatchFormat = (typeof pvpMatchFormatEnum.enumValues)[number];
 export type BlackjackSession = typeof blackjackSessions.$inferSelect;
 export type MinesSession = typeof minesSessions.$inferSelect;
+export type HiloSession = typeof hiloSessions.$inferSelect;
 export type LotteryRound = typeof lotteryRounds.$inferSelect;
 export type LotteryTicket = typeof lotteryTickets.$inferSelect;
 export type SlotsJackpot = typeof slotsJackpots.$inferSelect;
