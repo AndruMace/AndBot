@@ -30,7 +30,7 @@ export async function handleHelp(
           "`/casino` — Open the casino menu; pick a game, then tap a wager preset",
           "**Coinflip** — 50/50; double your wager",
           "**Blackjack** — Beat the dealer; natural 21 pays 3:2",
-          "**Slots** — 5 reels; match 2–4 symbols for pays (~100% RTP). Five of a kind wins the progressive jackpot (90% of net slot losses since the last hit)",
+          "**Slots** — 5 reels, 7 symbols; match 3–4 for pays (~100% RTP). Five of a kind wins the progressive jackpot (90% of net slot losses since the last hit)",
           "**Hi-Lo** — Guess if the next card is higher or lower (2x)",
           "**Lucky Number** — Pick 1–100; exact match 25x, close guesses 2–5x",
           "**Mines** — Reveal gems, avoid mines, cash out anytime",

@@ -1,31 +1,34 @@
 import type { Config } from "../../config";
 import { formatCurrency } from "../../utils/bets";
 
-export const SLOT_SYMBOLS = ["🍒", "🍋", "🔔", "💎", "7️⃣"] as const;
+export const SLOT_SYMBOLS = ["🍒", "🍋", "🔔", "💎", "7️⃣", "🔥", "🤑"] as const;
 export type SlotSymbol = (typeof SLOT_SYMBOLS)[number];
 export const SLOT_REEL_COUNT = 5;
 
 export type SlotReels = [SlotSymbol, SlotSymbol, SlotSymbol, SlotSymbol, SlotSymbol];
 
-const SYMBOL_WEIGHTS = [30, 25, 20, 15, 10];
+/** Common → rare; length must match SLOT_SYMBOLS. */
+const SYMBOL_WEIGHTS = [22, 20, 17, 14, 12, 9, 6];
 
-/** ~100% base RTP (progressive 5-of-a-kind excluded). */
-const TWO_OF_KIND_MULT = 0.9;
-
+/** ~100% base RTP (progressive 5-of-a-kind excluded). Only 3+ matches pay. */
 const THREE_OF_KIND_MULT: Record<SlotSymbol, number> = {
-  "🍒": 0.8,
-  "🍋": 0.96,
-  "🔔": 1.2,
-  "💎": 1.6,
-  "7️⃣": 2,
+  "🍒": 1.5,
+  "🍋": 2.5,
+  "🔔": 4,
+  "💎": 6,
+  "7️⃣": 8,
+  "🔥": 12,
+  "🤑": 20,
 };
 
 const FOUR_OF_KIND_MULT: Record<SlotSymbol, number> = {
-  "🍒": 2,
-  "🍋": 3,
-  "🔔": 4,
-  "💎": 5,
-  "7️⃣": 6,
+  "🍒": 8,
+  "🍋": 12,
+  "🔔": 20,
+  "💎": 30,
+  "7️⃣": 45,
+  "🔥": 70,
+  "🤑": 110,
 };
 
 function weightedSymbol(): SlotSymbol {
@@ -158,9 +161,9 @@ export function calculateSlotsPayout(
 
   if (maxCount === 2) {
     return {
-      multiplier: TWO_OF_KIND_MULT,
-      payout: Math.floor(wager * TWO_OF_KIND_MULT),
-      description: `Two of a kind! **${formatMultiplier(TWO_OF_KIND_MULT)}x** payout.`,
+      multiplier: 0,
+      payout: 0,
+      description: "Two of a kind — no payout.",
       isJackpot: false,
     };
   }
@@ -184,7 +187,7 @@ function symbolProbabilities(): number[] {
 function buildWeightedOutcomes(): { counts: number[]; probability: number }[] {
   const probabilities = symbolProbabilities();
   let outcomes: { counts: number[]; probability: number }[] = [
-    { counts: [0, 0, 0, 0, 0], probability: 1 },
+    { counts: Array(SLOT_SYMBOLS.length).fill(0), probability: 1 },
   ];
 
   for (let reel = 0; reel < SLOT_REEL_COUNT; reel++) {
@@ -221,8 +224,6 @@ export function getSlotsExpectedRtp(wager = 100): number {
     } else if (maxCount === 3) {
       const symbolIndex = outcome.counts.indexOf(3);
       multiplier = THREE_OF_KIND_MULT[SLOT_SYMBOLS[symbolIndex]!]!;
-    } else if (maxCount === 2) {
-      multiplier = TWO_OF_KIND_MULT;
     }
 
     const payout = Math.floor(wager * multiplier);

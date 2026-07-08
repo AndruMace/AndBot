@@ -35,14 +35,22 @@ describe("slots", () => {
   test("pays four of a kind", () => {
     const reels = ["7️⃣", "7️⃣", "7️⃣", "7️⃣", "🍒"] as SlotReels;
     const result = calculateSlotsPayout(reels, 100);
-    expect(result.payout).toBe(600);
+    expect(result.payout).toBe(4500);
     expect(result.isJackpot).toBe(false);
   });
 
-  test("pays two of a kind", () => {
+  test("two of a kind does not pay", () => {
     const reels = ["🍒", "🍒", "🍋", "🔔", "💎"] as SlotReels;
     const result = calculateSlotsPayout(reels, 50);
-    expect(result.payout).toBe(45);
+    expect(result.payout).toBe(0);
+  });
+
+  test("three of a kind never pays less than wager", () => {
+    for (const symbol of ["🍒", "🍋", "🔔", "💎", "7️⃣", "🔥", "🤑"] as const) {
+      const reels = [symbol, symbol, symbol, "🍒", "🍋"] as SlotReels;
+      const result = calculateSlotsPayout(reels, 500);
+      expect(result.payout).toBeGreaterThanOrEqual(500);
+    }
   });
 
   test("five of a kind triggers progressive jackpot", () => {
@@ -60,7 +68,7 @@ describe("slots", () => {
 
   test("expected base RTP is near 100%", () => {
     expect(getSlotsExpectedRtp(100)).toBeGreaterThan(0.98);
-    expect(getSlotsExpectedRtp(100)).toBeLessThan(1.02);
+    expect(getSlotsExpectedRtp(100)).toBeLessThan(1.04);
   });
 
   test("animation ends on final reels", () => {

@@ -138,6 +138,8 @@ async function runSlotsAnimation(
   const netLoss = Math.max(0, amount - basePayout);
   const updatedJackpot = await slotsJackpot.feedJackpot(guildId, netLoss);
   const totalPayout = basePayout + jackpotPayout;
+  const won = totalPayout > amount;
+  const push = totalPayout === amount && totalPayout > 0;
   const balance = await wallet.getBalance(guildId, userId);
 
   let resultText = `${formatReels(reels)}\n\n${description}`;
@@ -148,7 +150,7 @@ async function runSlotsAnimation(
   const body =
     `${formatSlotsJackpotLine(updatedJackpot, config)}\n\n${resultText}\n` +
     publicResultFooter(amount, totalPayout, config, {
-      lost: totalPayout === 0,
+      lost: totalPayout < amount,
       balance,
     });
 
@@ -156,14 +158,16 @@ async function runSlotsAnimation(
     embeds: [
       new EmbedBuilder()
         .setColor(
-          jackpotPayout > 0 ? 0xf1c40f : totalPayout > 0 ? 0x57f287 : 0xed4245,
+          jackpotPayout > 0 ? 0xf1c40f : won ? 0x57f287 : push ? 0xe67e22 : 0xed4245,
         )
         .setTitle(
           jackpotPayout > 0
             ? "Slots — Progressive Jackpot!"
-            : totalPayout > 0
+            : won
               ? "Slots — Winner!"
-              : "Slots — No Luck",
+              : push
+                ? "Slots — Break Even"
+                : "Slots — No Luck",
         )
         .setDescription(describePublic(userId, "slots", amount, config, body)),
     ],
