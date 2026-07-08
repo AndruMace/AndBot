@@ -95,13 +95,38 @@ export async function runSlotsAnimation(
   wallet: WalletService,
   slotsJackpot: SlotsJackpotService,
   config: Config,
+  startingJackpot?: number,
 ) {
-  const startingJackpot = (await slotsJackpot.getJackpot(guildId)).accumulatedLosses;
-  await wallet.debit(guildId, userId, amount, "slots_bet");
   const reels = spinSlots();
-  const frames = buildSlotsFrames(reels);
+  const { payout: basePayout, description, isJackpot } = calculateSlotsPayout(reels, amount);
+  const netLoss = Math.max(0, amount - basePayout);
+  const potBeforeSpin =
+    startingJackpot ?? (await slotsJackpot.getJackpot(guildId)).accumulatedLosses;
 
-  const jackpotLine = formatSlotsJackpotLine(startingJackpot, config);
+  const settlement = (async () => {
+    let balance = await wallet.debit(guildId, userId, amount, "slots_bet");
+    const { accumulatedLosses: updatedJackpot, jackpotPayout } = await slotsJackpot.settleSpin(
+      guildId,
+      userId,
+      netLoss,
+      isJackpot,
+      potBeforeSpin,
+    );
+
+    if (basePayout > 0) {
+      balance = await wallet.credit(guildId, userId, basePayout, "slots_win", undefined, { reels });
+    }
+    if (jackpotPayout > 0) {
+      balance = await wallet.credit(guildId, userId, jackpotPayout, "slots_jackpot_win", undefined, {
+        reels,
+      });
+    }
+
+    return { updatedJackpot, jackpotPayout, balance };
+  })();
+
+  const frames = buildSlotsFrames(reels);
+  const jackpotLine = formatSlotsJackpotLine(potBeforeSpin, config);
 
   for (let step = 0; step < frames.length; step++) {
     const spinning = step < frames.length - 1;
@@ -119,35 +144,17 @@ export async function runSlotsAnimation(
     if (spinning) await sleep(SLOTS_FRAME_DELAY_MS);
   }
 
-  const { payout: basePayout, description, isJackpot } = calculateSlotsPayout(reels, amount);
-  let jackpotPayout = 0;
-
-  if (basePayout > 0) {
-    await wallet.credit(guildId, userId, basePayout, "slots_win", undefined, { reels });
-  }
-
-  if (isJackpot) {
-    jackpotPayout = await slotsJackpot.awardJackpot(guildId, userId);
-    if (jackpotPayout > 0) {
-      await wallet.credit(guildId, userId, jackpotPayout, "slots_jackpot_win", undefined, {
-        reels,
-      });
-    }
-  }
-
-  const netLoss = Math.max(0, amount - basePayout);
-  const updatedJackpot = await slotsJackpot.feedJackpot(guildId, netLoss);
+  const { updatedJackpot, jackpotPayout, balance } = await settlement;
   const totalPayout = basePayout + jackpotPayout;
   const won = totalPayout > amount;
   const push = totalPayout === amount && totalPayout > 0;
-  const balance = await wallet.getBalance(guildId, userId);
 
   let resultText = `${formatReels(reels)}\n\n${description}`;
   if (jackpotPayout > 0) {
     resultText += `\nProgressive jackpot: **${formatCurrency(jackpotPayout, config)}**!`;
   }
 
-  const body =
+  const resultBody =
     `${formatSlotsJackpotLine(updatedJackpot, config)}\n\n${resultText}\n` +
     publicResultFooter(amount, totalPayout, config, {
       lost: totalPayout < amount,
@@ -169,7 +176,7 @@ export async function runSlotsAnimation(
                 ? "Slots — Break Even"
                 : "Slots — No Luck",
         )
-        .setDescription(describePublic(userId, "slots", amount, config, body)),
+        .setDescription(describePublic(userId, "slots", amount, config, resultBody)),
     ],
     components: casinoPostGameComponents({
       userId,
@@ -288,7 +295,16 @@ export async function executeCasinoGame(
             ),
         ],
       });
-      await runSlotsAnimation(edit, guildId, userId, amount, wallet, slotsJackpot, config);
+      await runSlotsAnimation(
+        edit,
+        guildId,
+        userId,
+        amount,
+        wallet,
+        slotsJackpot,
+        config,
+        startingJackpot,
+      );
       return;
     }
 
