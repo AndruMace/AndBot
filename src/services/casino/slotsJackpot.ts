@@ -9,6 +9,23 @@ export function calculateJackpotPayout(accumulatedLosses: number): number {
   return Math.floor((accumulatedLosses * SLOTS_JACKPOT_PAYOUT_PERCENT) / 100);
 }
 
+export function resolveJackpotSettlement(
+  currentPot: number,
+  netLoss: number,
+  isJackpotWin: boolean,
+): { accumulatedLosses: number; jackpotPayout: number } {
+  if (isJackpotWin) {
+    return {
+      accumulatedLosses: 0,
+      jackpotPayout: calculateJackpotPayout(currentPot),
+    };
+  }
+  if (netLoss > 0) {
+    return { accumulatedLosses: currentPot + netLoss, jackpotPayout: 0 };
+  }
+  return { accumulatedLosses: currentPot, jackpotPayout: 0 };
+}
+
 export class SlotsJackpotService {
   constructor(private db: Database) {}
 
@@ -16,11 +33,49 @@ export class SlotsJackpotService {
     return this.db.transaction(async (tx) => this.getOrCreateRow(tx, guildId));
   }
 
-  async feedJackpot(guildId: string, netLoss: number): Promise<number> {
-    if (netLoss <= 0) {
-      const row = await this.getJackpot(guildId);
-      return row.accumulatedLosses;
-    }
+  async settleSpin(
+    guildId: string,
+    userId: string,
+    netLoss: number,
+    isJackpotWin: boolean,
+  ): Promise<{ accumulatedLosses: number; jackpotPayout: number }> {
+    return this.db.transaction(async (tx) => {
+      const row = await this.lockRow(tx, guildId);
+      const { accumulatedLosses, jackpotPayout } = resolveJackpotSettlement(
+        row.accumulatedLosses,
+        netLoss,
+        isJackpotWin,
+      );
+
+      if (isJackpotWin) {
+        await tx
+          .update(slotsJackpots)
+          .set({
+            accumulatedLosses: 0,
+            lastWinnerId: jackpotPayout > 0 ? userId : row.lastWinnerId,
+            lastWonAt: jackpotPayout > 0 ? new Date() : row.lastWonAt,
+            totalWins: jackpotPayout > 0 ? row.totalWins + 1 : row.totalWins,
+            updatedAt: new Date(),
+          })
+          .where(eq(slotsJackpots.guildId, guildId));
+      } else if (netLoss > 0) {
+        await tx
+          .update(slotsJackpots)
+          .set({ accumulatedLosses, updatedAt: new Date() })
+          .where(eq(slotsJackpots.guildId, guildId));
+      }
+
+      return { accumulatedLosses, jackpotPayout };
+    });
+  }
+
+  /** @deprecated use settleSpin */
+  async feedJackpot(
+    guildId: string,
+    netLoss: number,
+    knownPot = 0,
+  ): Promise<number> {
+    if (netLoss <= 0) return knownPot;
 
     return this.db.transaction(async (tx) => {
       const row = await this.lockRow(tx, guildId);
@@ -35,24 +90,10 @@ export class SlotsJackpotService {
     });
   }
 
+  /** @deprecated use settleSpin */
   async awardJackpot(guildId: string, userId: string): Promise<number> {
-    return this.db.transaction(async (tx) => {
-      const row = await this.lockRow(tx, guildId);
-      const payout = calculateJackpotPayout(row.accumulatedLosses);
-
-      await tx
-        .update(slotsJackpots)
-        .set({
-          accumulatedLosses: 0,
-          lastWinnerId: payout > 0 ? userId : row.lastWinnerId,
-          lastWonAt: payout > 0 ? new Date() : row.lastWonAt,
-          totalWins: payout > 0 ? row.totalWins + 1 : row.totalWins,
-          updatedAt: new Date(),
-        })
-        .where(eq(slotsJackpots.guildId, guildId));
-
-      return payout;
-    });
+    const { jackpotPayout } = await this.settleSpin(guildId, userId, 0, true);
+    return jackpotPayout;
   }
 
   private async getOrCreateRow(
