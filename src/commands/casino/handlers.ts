@@ -512,8 +512,7 @@ export async function handleCasinoPlayAgain(
     };
 
     switch (replay.game) {
-      case "slots": {
-        const startingJackpot = (await slotsJackpot.getJackpot(guildId)).accumulatedLosses;
+      case "slots":
         await runSlotsAnimation(
           edit,
           guildId,
@@ -522,10 +521,8 @@ export async function handleCasinoPlayAgain(
           wallet,
           slotsJackpot,
           config,
-          startingJackpot,
         );
         return;
-      }
       case "plinko":
         await runPlinkoAnimation(edit, guildId, replay.userId, amount, wallet, config);
         return;
