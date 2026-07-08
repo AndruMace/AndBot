@@ -115,10 +115,9 @@ describe("plinko", () => {
     expect(calculatePlinkoPayout(100, { label: "2x", multiplier: 2, weight: 1 })).toBe(200);
   });
 
-  test("expected RTP is near 95%", () => {
-    expect(getPlinkoExpectedRtp(100)).toBeGreaterThan(0.94);
-    expect(getPlinkoExpectedRtp(100)).toBeLessThan(0.96);
-    expect(getPlinkoExpectedRtp(10)).toBeGreaterThan(0.94);
+  test("expected RTP is break-even", () => {
+    expect(getPlinkoExpectedRtp(100)).toBeCloseTo(1, 10);
+    expect(getPlinkoExpectedRtp(10)).toBeCloseTo(1, 10);
   });
 
   test("path ends at target bucket", () => {

@@ -4,14 +4,14 @@ export type PlinkoBucket = {
   weight: number;
 };
 
-/** ~95.4% RTP at normal stakes (4.6% house edge). Weights sum to 100. */
+/** 100% RTP at normal stakes — profit/loss is variance only. Weights sum to 100. */
 export const PLINKO_BUCKETS: PlinkoBucket[] = [
-  { label: "0.2x", multiplier: 0.2, weight: 27 },
+  { label: "0.2x", multiplier: 0.2, weight: 25 },
   { label: "0.5x", multiplier: 0.5, weight: 25 },
   { label: "1x", multiplier: 1, weight: 23 },
-  { label: "1.5x", multiplier: 1.5, weight: 11 },
-  { label: "2x", multiplier: 2, weight: 8 },
-  { label: "3x", multiplier: 3, weight: 4 },
+  { label: "1.5x", multiplier: 1.5, weight: 13 },
+  { label: "2x", multiplier: 2, weight: 6 },
+  { label: "3x", multiplier: 3, weight: 6 },
   { label: "5x", multiplier: 5, weight: 2 },
 ];
 
