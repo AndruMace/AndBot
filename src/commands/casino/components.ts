@@ -81,6 +81,27 @@ export function casinoMenuRows(): ActionRowBuilder<ButtonBuilder>[] {
   return rows;
 }
 
+export function casinoStartOwnGameRow(
+  userId: string,
+  game: CasinoGame,
+): ActionRowBuilder<ButtonBuilder> {
+  const info = CASINO_GAMES.find((g) => g.id === game);
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId(casinoSetupButtonId(userId, game))
+      .setLabel(`Play ${info?.label ?? game}`)
+      .setStyle(ButtonStyle.Primary)
+      .setEmoji(info?.emoji ?? "🎰"),
+  );
+}
+
+export function casinoStartOwnGameComponents(
+  userId: string,
+  game: CasinoGame,
+): ActionRowBuilder<ButtonBuilder>[] {
+  return [casinoStartOwnGameRow(userId, game)];
+}
+
 export function casinoPostGameRow(replay: CasinoReplayOptions): ActionRowBuilder<ButtonBuilder> {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()

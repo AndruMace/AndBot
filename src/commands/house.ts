@@ -14,7 +14,7 @@ import { BlackjackSessionError } from "../services/blackjack/session";
 import { type CoinSide } from "../services/coinflip";
 import { runCoinflipAnimation } from "./casino/presentations";
 import { postPublicGameMessage, buildGameHeader, prefixDescription, type SetupInteraction, rollbackCreatedSession } from "./casino/publicMessage";
-import { casinoPostGameComponents } from "./casino/components";
+import { casinoPostGameComponents, casinoStartOwnGameComponents } from "./casino/components";
 import type { CasinoReplayOptions } from "./casino/replay";
 import { InsufficientFundsError } from "../services/wallet";
 import { assertGuild } from "../utils/permissions";
@@ -407,7 +407,11 @@ export async function handleBlackjackButton(
     return;
   }
   if (session.userId !== interaction.user.id) {
-    await interaction.reply({ content: "This is not your blackjack game.", ephemeral: true });
+    await interaction.reply({
+      content: "This is not your blackjack game.",
+      components: casinoStartOwnGameComponents(interaction.user.id, "blackjack"),
+      ephemeral: true,
+    });
     return;
   }
 

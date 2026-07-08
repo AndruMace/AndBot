@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { casinoStartOwnGameRow } from "./components";
 import {
   casinoAgainButtonId,
   casinoSetupButtonId,
@@ -84,5 +85,10 @@ describe("casino replay buttons", () => {
 
   test("setup button encodes owner and game", () => {
     expect(casinoSetupButtonId(USER, "plinko")).toBe(`casino:setup:${USER}:plinko`);
+  });
+
+  test("start own game row targets the clicker for setup", () => {
+    const row = casinoStartOwnGameRow(USER, "roulette");
+    expect(row.components[0]?.data.custom_id).toBe(casinoSetupButtonId(USER, "roulette"));
   });
 });

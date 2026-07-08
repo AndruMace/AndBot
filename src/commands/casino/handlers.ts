@@ -51,6 +51,7 @@ import {
   casinoMenuEmbed,
   casinoMenuRows,
   casinoPostGameComponents,
+  casinoStartOwnGameComponents,
   hiloChoiceRow,
 } from "./components";
 import {
@@ -83,6 +84,18 @@ import {
   resolveWagerAmount,
   parseCustomWagerAmount,
 } from "./wagers";
+
+async function replyNotYourCasinoGame(
+  interaction: ButtonInteraction,
+  game: CasinoGame,
+  message = "This is not your game.",
+) {
+  await interaction.reply({
+    content: message,
+    components: casinoStartOwnGameComponents(interaction.user.id, game),
+    ephemeral: true,
+  });
+}
 
 function buildMinesEmbed(
   session: MinesSession,
@@ -469,7 +482,7 @@ export async function handleCasinoChangeSetup(
   config: Config,
 ) {
   if (interaction.user.id !== ownerId) {
-    await interaction.reply({ content: "This is not your game.", ephemeral: true });
+    await replyNotYourCasinoGame(interaction, game);
     return;
   }
 
@@ -489,7 +502,7 @@ export async function handleCasinoPlayAgain(
   const channelId = interaction.channelId;
 
   if (interaction.user.id !== replay.userId) {
-    await interaction.reply({ content: "This is not your game.", ephemeral: true });
+    await replyNotYourCasinoGame(interaction, replay.game);
     return;
   }
   if (!channelId) {
@@ -949,7 +962,7 @@ export async function handleCasinoRouletteBet(
 ) {
   const guildId = assertGuild(interaction);
   if (interaction.user.id !== ownerId) {
-    await interaction.reply({ content: "This is not your roulette game.", ephemeral: true });
+    await replyNotYourCasinoGame(interaction, "roulette", "This is not your roulette game.");
     return;
   }
 
@@ -990,7 +1003,7 @@ export async function handleCasinoCoinflipSide(
 ) {
   const guildId = assertGuild(interaction);
   if (interaction.user.id !== ownerId) {
-    await interaction.reply({ content: "This is not your coinflip.", ephemeral: true });
+    await replyNotYourCasinoGame(interaction, "coinflip", "This is not your coinflip.");
     return;
   }
 
@@ -1038,7 +1051,7 @@ export async function handleCasinoHiLo(
 ) {
   const guildId = assertGuild(interaction);
   if (interaction.user.id !== ownerId) {
-    await interaction.reply({ content: "This is not your game.", ephemeral: true });
+    await replyNotYourCasinoGame(interaction, game);
     return;
   }
 
@@ -1104,7 +1117,7 @@ export async function handleCasinoMinesConfig(
   const channelId = interaction.channelId;
 
   if (interaction.user.id !== ownerId) {
-    await interaction.reply({ content: "This is not your game.", ephemeral: true });
+    await replyNotYourCasinoGame(interaction, game);
     return;
   }
   if (!channelId) {
@@ -1195,7 +1208,7 @@ export async function handleCasinoMinesReveal(
     return;
   }
   if (session.userId !== interaction.user.id) {
-    await interaction.reply({ content: "This is not your mines game.", ephemeral: true });
+    await replyNotYourCasinoGame(interaction, "mines", "This is not your mines game.");
     return;
   }
 
@@ -1254,7 +1267,7 @@ export async function handleCasinoMinesCashout(
     return;
   }
   if (session.userId !== interaction.user.id) {
-    await interaction.reply({ content: "This is not your mines game.", ephemeral: true });
+    await replyNotYourCasinoGame(interaction, "mines", "This is not your mines game.");
     return;
   }
 
