@@ -70,6 +70,17 @@ export async function handleHelp(
         value: [
           "`/give user amount [reason]` — Give currency to a player",
           "`/take user amount [reason]` — Remove currency from a player",
+          "`/andbot-ticket-review list [status]` — List submitted tickets",
+          "`/andbot-ticket-review view id:<ID>` — View a ticket",
+          "`/andbot-ticket-review resolve id:<ID> [note]` — Mark resolved",
+          "`/andbot-ticket-review close id:<ID> [note]` — Close without resolving",
+        ].join("\n"),
+      },
+      {
+        name: "Feedback",
+        value: [
+          "`/andbot-ticket type title message` — Submit an issue or suggestion",
+          "  • You'll get a ticket ID; mods review with `/andbot-ticket-review`",
         ].join("\n"),
       },
     )

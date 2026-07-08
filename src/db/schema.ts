@@ -295,6 +295,32 @@ export const slotsJackpots = pgTable("slots_jackpots", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const ticketStatusEnum = pgEnum("ticket_status", ["open", "resolved", "closed"]);
+
+export const ticketTypeEnum = pgEnum("ticket_type", ["issue", "suggestion"]);
+
+export const andbotTickets = pgTable(
+  "andbot_tickets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    guildId: text("guild_id").notNull(),
+    channelId: text("channel_id").notNull(),
+    submitterId: text("submitter_id").notNull(),
+    type: ticketTypeEnum("type").notNull(),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    status: ticketStatusEnum("status").notNull().default("open"),
+    reviewerId: text("reviewer_id"),
+    reviewNote: text("review_note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("andbot_tickets_guild_status_idx").on(table.guildId, table.status),
+    index("andbot_tickets_guild_submitter_idx").on(table.guildId, table.submitterId),
+  ],
+);
+
 export type Wallet = typeof wallets.$inferSelect;
 export type PvpChallenge = typeof pvpChallenges.$inferSelect;
 export type PvpGameType = (typeof pvpGameTypeEnum.enumValues)[number];
@@ -305,4 +331,7 @@ export type HiloSession = typeof hiloSessions.$inferSelect;
 export type LotteryRound = typeof lotteryRounds.$inferSelect;
 export type LotteryTicket = typeof lotteryTickets.$inferSelect;
 export type SlotsJackpot = typeof slotsJackpots.$inferSelect;
+export type AndbotTicket = typeof andbotTickets.$inferSelect;
+export type TicketStatus = (typeof ticketStatusEnum.enumValues)[number];
+export type TicketType = (typeof ticketTypeEnum.enumValues)[number];
 export type TransactionType = (typeof transactionTypeEnum.enumValues)[number];

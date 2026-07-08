@@ -8,6 +8,7 @@ import { createMinesSessionService } from "../services/casino/mines/session";
 import { createHiloSessionService } from "../services/casino/hilo/session";
 import { createLotteryService } from "../services/lottery/rounds";
 import { createSlotsJackpotService } from "../services/casino/slotsJackpot";
+import { createTicketService } from "../services/tickets/tickets";
 import { handleBalance, handleDaily, handleWeekly, handlePay } from "../commands/economy";
 import { handleCoinflip, handleBlackjack, handleBlackjackButton } from "../commands/house";
 import {
@@ -21,6 +22,7 @@ import {
   handleRoulettePull,
 } from "../commands/pvp";
 import { handleGive, handleTake } from "../commands/admin";
+import { handleAndbotTicketSubmit, handleAndbotTicketReview } from "../commands/ticket";
 import { handleLotteryBuy, handleLotteryStatus, handleLotteryDraw } from "../commands/lottery";
 import { handleHelp } from "../commands/help";
 import { handleLeaderboard } from "../commands/leaderboard";
@@ -83,6 +85,7 @@ export function registerInteractionHandler(client: Client, db: Database, config:
   const hilo = createHiloSessionService(db, wallet, config);
   const lottery = createLotteryService(db, wallet, config);
   const slotsJackpot = createSlotsJackpotService(db);
+  const tickets = createTicketService(db, config);
 
   client.on("interactionCreate", async (interaction: Interaction) => {
     try {
@@ -154,6 +157,12 @@ export function registerInteractionHandler(client: Client, db: Database, config:
             break;
           case "take":
             await handleTake(interaction, wallet, config);
+            break;
+          case "andbot-ticket":
+            await handleAndbotTicketSubmit(interaction, tickets, config);
+            break;
+          case "andbot-ticket-review":
+            await handleAndbotTicketReview(interaction, tickets, config);
             break;
         }
         return;

@@ -188,4 +188,77 @@ export const commands = [
     .addStringOption((opt) =>
       opt.setName("reason").setDescription("Reason for audit log").setMaxLength(200),
     ),
+  new SlashCommandBuilder()
+    .setName("andbot-ticket")
+    .setDescription("Submit an issue or suggestion for AndBot")
+    .addStringOption((opt) =>
+      opt
+        .setName("type")
+        .setDescription("Issue or suggestion")
+        .setRequired(true)
+        .addChoices(
+          { name: "Issue", value: "issue" },
+          { name: "Suggestion", value: "suggestion" },
+        ),
+    )
+    .addStringOption((opt) =>
+      opt.setName("title").setDescription("Short summary").setRequired(true).setMaxLength(100),
+    )
+    .addStringOption((opt) =>
+      opt
+        .setName("message")
+        .setDescription("Details")
+        .setRequired(true)
+        .setMaxLength(1000),
+    ),
+  new SlashCommandBuilder()
+    .setName("andbot-ticket-review")
+    .setDescription("Review submitted AndBot tickets (mods)")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .addSubcommand((sub) =>
+      sub
+        .setName("list")
+        .setDescription("List tickets")
+        .addStringOption((opt) =>
+          opt
+            .setName("status")
+            .setDescription("Filter by status (default: open)")
+            .addChoices(
+              { name: "Open", value: "open" },
+              { name: "Resolved", value: "resolved" },
+              { name: "Closed", value: "closed" },
+              { name: "All", value: "all" },
+            ),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("view")
+        .setDescription("View a ticket by ID")
+        .addStringOption((opt) =>
+          opt.setName("id").setDescription("Ticket ID (8 characters)").setRequired(true).setMinLength(8).setMaxLength(8),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("resolve")
+        .setDescription("Mark a ticket as resolved")
+        .addStringOption((opt) =>
+          opt.setName("id").setDescription("Ticket ID (8 characters)").setRequired(true).setMinLength(8).setMaxLength(8),
+        )
+        .addStringOption((opt) =>
+          opt.setName("note").setDescription("Optional note for the submitter").setMaxLength(500),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("close")
+        .setDescription("Close a ticket without resolving")
+        .addStringOption((opt) =>
+          opt.setName("id").setDescription("Ticket ID (8 characters)").setRequired(true).setMinLength(8).setMaxLength(8),
+        )
+        .addStringOption((opt) =>
+          opt.setName("note").setDescription("Optional note for the submitter").setMaxLength(500),
+        ),
+    ),
 ].map((cmd) => cmd.toJSON());

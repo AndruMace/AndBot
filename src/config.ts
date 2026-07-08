@@ -25,6 +25,10 @@ const envSchema = z.object({
     .string()
     .optional()
     .transform((value) => value === "true"),
+  TICKET_MOD_CHANNEL_ID: z.string().optional(),
+  TICKET_MAX_OPEN_PER_USER: z.coerce.number().int().positive().default(3),
+  TICKET_TITLE_MAX_LENGTH: z.coerce.number().int().positive().default(100),
+  TICKET_BODY_MAX_LENGTH: z.coerce.number().int().positive().default(1000),
 });
 
 export type Config = z.infer<typeof envSchema>;
