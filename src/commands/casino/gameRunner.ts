@@ -9,9 +9,11 @@ import {
   calculateSlotsPayout,
   buildSlotsFrames,
   renderSlotsFrame,
+  formatSlotsJackpotLine,
   sleep,
   SLOTS_FRAME_DELAY_MS,
 } from "../../services/casino/slots";
+import type { SlotsJackpotService } from "../../services/casino/slotsJackpot";
 import { drawCard } from "../../services/casino/hilo";
 import { rollLuckyNumber } from "../../services/casino/lucky";
 import {
@@ -91,15 +93,21 @@ async function runSlotsAnimation(
   userId: string,
   amount: number,
   wallet: WalletService,
+  slotsJackpot: SlotsJackpotService,
   config: Config,
 ) {
+  const startingJackpot = (await slotsJackpot.getJackpot(guildId)).accumulatedLosses;
   await wallet.debit(guildId, userId, amount, "slots_bet");
   const reels = spinSlots();
   const frames = buildSlotsFrames(reels);
 
+  const jackpotLine = formatSlotsJackpotLine(startingJackpot, config);
+
   for (let step = 0; step < frames.length; step++) {
     const spinning = step < frames.length - 1;
-    const body = `${renderSlotsFrame(frames[step]!)}${spinning ? "\n*Spinning...*" : ""}`;
+    const body =
+      `${jackpotLine}\n\n${renderSlotsFrame(frames[step]!)}` +
+      (spinning ? "\n*Spinning...*" : "");
     await edit({
       embeds: [
         new EmbedBuilder()
@@ -111,21 +119,52 @@ async function runSlotsAnimation(
     if (spinning) await sleep(SLOTS_FRAME_DELAY_MS);
   }
 
-  const { payout, description } = calculateSlotsPayout(reels, amount);
-  if (payout > 0) {
-    await wallet.credit(guildId, userId, payout, "slots_win", undefined, { reels });
+  const { payout: basePayout, description, isJackpot } = calculateSlotsPayout(reels, amount);
+  let jackpotPayout = 0;
+
+  if (basePayout > 0) {
+    await wallet.credit(guildId, userId, basePayout, "slots_win", undefined, { reels });
   }
+
+  if (isJackpot) {
+    jackpotPayout = await slotsJackpot.awardJackpot(guildId, userId);
+    if (jackpotPayout > 0) {
+      await wallet.credit(guildId, userId, jackpotPayout, "slots_jackpot_win", undefined, {
+        reels,
+      });
+    }
+  }
+
+  const netLoss = Math.max(0, amount - basePayout);
+  const updatedJackpot = await slotsJackpot.feedJackpot(guildId, netLoss);
+  const totalPayout = basePayout + jackpotPayout;
   const balance = await wallet.getBalance(guildId, userId);
 
+  let resultText = `${formatReels(reels)}\n\n${description}`;
+  if (jackpotPayout > 0) {
+    resultText += `\nProgressive jackpot: **${formatCurrency(jackpotPayout, config)}**!`;
+  }
+
   const body =
-    `${formatReels(reels)}\n\n${description}\n` +
-    publicResultFooter(amount, payout, config, { lost: payout === 0, balance });
+    `${formatSlotsJackpotLine(updatedJackpot, config)}\n\n${resultText}\n` +
+    publicResultFooter(amount, totalPayout, config, {
+      lost: totalPayout === 0,
+      balance,
+    });
 
   await edit({
     embeds: [
       new EmbedBuilder()
-        .setColor(payout > 0 ? 0x57f287 : 0xed4245)
-        .setTitle(payout > 0 ? "Slots — Winner!" : "Slots — No Luck")
+        .setColor(
+          jackpotPayout > 0 ? 0xf1c40f : totalPayout > 0 ? 0x57f287 : 0xed4245,
+        )
+        .setTitle(
+          jackpotPayout > 0
+            ? "Slots — Progressive Jackpot!"
+            : totalPayout > 0
+              ? "Slots — Winner!"
+              : "Slots — No Luck",
+        )
         .setDescription(describePublic(userId, "slots", amount, config, body)),
     ],
     components: casinoPostGameComponents("slots"),
@@ -189,6 +228,7 @@ export async function executeCasinoGame(
   amount: number,
   wallet: WalletService,
   blackjack: BlackjackSessionService,
+  slotsJackpot: SlotsJackpotService,
   config: Config,
   luckyPick?: number,
 ) {
@@ -219,17 +259,24 @@ export async function executeCasinoGame(
       return;
 
     case "slots": {
+      const startingJackpot = (await slotsJackpot.getJackpot(guildId)).accumulatedLosses;
       const { edit } = await postPublicGameMessage(interaction, {
         embeds: [
           new EmbedBuilder()
             .setColor(0xe67e22)
             .setTitle("Slots")
             .setDescription(
-              describePublic(userId, game, amount, config, "*Spinning...*"),
+              describePublic(
+                userId,
+                game,
+                amount,
+                config,
+                `${formatSlotsJackpotLine(startingJackpot, config)}\n\n*Spinning...*`,
+              ),
             ),
         ],
       });
-      await runSlotsAnimation(edit, guildId, userId, amount, wallet, config);
+      await runSlotsAnimation(edit, guildId, userId, amount, wallet, slotsJackpot, config);
       return;
     }
 
@@ -370,9 +417,10 @@ export async function executeLuckyWithPick(
   pick: number,
   wallet: WalletService,
   blackjack: BlackjackSessionService,
+  slotsJackpot: SlotsJackpotService,
   config: Config,
 ) {
-  await executeCasinoGame(interaction, "lucky", amount, wallet, blackjack, config, pick);
+  await executeCasinoGame(interaction, "lucky", amount, wallet, blackjack, slotsJackpot, config, pick);
 }
 
 export function randomLuckyPick(): number {

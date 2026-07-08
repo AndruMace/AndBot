@@ -6,6 +6,7 @@ import { createClaimsService } from "../services/claims";
 import { createBlackjackSessionService } from "../services/blackjack/session";
 import { createMinesSessionService } from "../services/casino/mines/session";
 import { createLotteryService } from "../services/lottery/rounds";
+import { createSlotsJackpotService } from "../services/casino/slotsJackpot";
 import { handleBalance, handleDaily, handleWeekly, handlePay } from "../commands/economy";
 import { handleCoinflip, handleBlackjack, handleBlackjackButton } from "../commands/house";
 import {
@@ -74,6 +75,7 @@ export function registerInteractionHandler(client: Client, db: Database, config:
   const blackjack = createBlackjackSessionService(db, wallet, config);
   const mines = createMinesSessionService(db, wallet, config);
   const lottery = createLotteryService(db, wallet, config);
+  const slotsJackpot = createSlotsJackpotService(db);
 
   client.on("interactionCreate", async (interaction: Interaction) => {
     try {
@@ -308,7 +310,15 @@ export function registerInteractionHandler(client: Client, db: Database, config:
           }
 
           if (action === "bet" && isCasinoGame(sub!) && rest[0]) {
-            await handleCasinoWagerBet(interaction, sub!, rest[0], wallet, blackjack, config);
+            await handleCasinoWagerBet(
+              interaction,
+              sub!,
+              rest[0],
+              wallet,
+              blackjack,
+              slotsJackpot,
+              config,
+            );
             return;
           }
 
@@ -322,6 +332,7 @@ export function registerInteractionHandler(client: Client, db: Database, config:
                 sub!,
                 wallet,
                 blackjack,
+                slotsJackpot,
                 config,
               );
             }
@@ -507,6 +518,7 @@ export function registerInteractionHandler(client: Client, db: Database, config:
               casinoParts[2]!,
               wallet,
               blackjack,
+              slotsJackpot,
               config,
             );
             return;
@@ -517,6 +529,7 @@ export function registerInteractionHandler(client: Client, db: Database, config:
               casinoParts[2],
               wallet,
               blackjack,
+              slotsJackpot,
               config,
             );
             return;

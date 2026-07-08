@@ -50,6 +50,13 @@
       "when": 1783230000000,
       "tag": "0006_keno",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1783240000000,
+      "tag": "0007_slots_jackpot",
+      "breakpoints": true
     }
   ]
 }

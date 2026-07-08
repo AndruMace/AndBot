@@ -1,5 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import { calculateSlotsPayout, spinSlots, buildSlotsFrames, renderSlotsFrame, SLOTS_SPIN_TICKS } from "./slots";
+import {
+  calculateSlotsPayout,
+  spinSlots,
+  buildSlotsFrames,
+  renderSlotsFrame,
+  isFiveOfAKind,
+  getSlotsExpectedRtp,
+  SLOT_REEL_COUNT,
+  SLOTS_SPIN_TICKS,
+  type SlotReels,
+} from "./slots";
 import { resolveHiLo } from "./hilo";
 import { calculateLuckyPayout } from "./lucky";
 import {
@@ -22,34 +32,48 @@ import {
 import { buildKenoRevealFrames, renderKenoFrame } from "./kenoAnim";
 
 describe("slots", () => {
-  test("pays triple match", () => {
-    const reels = ["7️⃣", "7️⃣", "7️⃣"] as ["7️⃣", "7️⃣", "7️⃣"];
+  test("pays four of a kind", () => {
+    const reels = ["7️⃣", "7️⃣", "7️⃣", "7️⃣", "🍒"] as SlotReels;
     const result = calculateSlotsPayout(reels, 100);
-    expect(result.payout).toBe(2000);
+    expect(result.payout).toBe(600);
+    expect(result.isJackpot).toBe(false);
   });
 
-  test("pays double match", () => {
-    const reels = ["🍒", "🍒", "🍋"] as ["🍒", "🍒", "🍋"];
+  test("pays two of a kind", () => {
+    const reels = ["🍒", "🍒", "🍋", "🔔", "💎"] as SlotReels;
     const result = calculateSlotsPayout(reels, 50);
-    expect(result.payout).toBe(100);
+    expect(result.payout).toBe(45);
   });
 
-  test("spin produces three symbols", () => {
+  test("five of a kind triggers progressive jackpot", () => {
+    const reels = ["💎", "💎", "💎", "💎", "💎"] as SlotReels;
+    expect(isFiveOfAKind(reels)).toBe(true);
+    const result = calculateSlotsPayout(reels, 100);
+    expect(result.payout).toBe(0);
+    expect(result.isJackpot).toBe(true);
+  });
+
+  test("spin produces five symbols", () => {
     const reels = spinSlots();
-    expect(reels).toHaveLength(3);
+    expect(reels).toHaveLength(SLOT_REEL_COUNT);
+  });
+
+  test("expected base RTP is near 100%", () => {
+    expect(getSlotsExpectedRtp(100)).toBeGreaterThan(0.98);
+    expect(getSlotsExpectedRtp(100)).toBeLessThan(1.02);
   });
 
   test("animation ends on final reels", () => {
     const final = spinSlots();
     const frames = buildSlotsFrames(final);
-    expect(frames).toHaveLength(SLOTS_SPIN_TICKS + 3);
+    expect(frames).toHaveLength(SLOTS_SPIN_TICKS + SLOT_REEL_COUNT);
     expect(frames[frames.length - 1]).toEqual(final);
-    expect(frames[frames.length - 3]?.[0]).toEqual(final[0]);
-    expect(frames[frames.length - 2]?.[1]).toEqual(final[1]);
+    expect(frames[frames.length - SLOT_REEL_COUNT]?.[0]).toEqual(final[0]);
+    expect(frames[frames.length - 1]?.[SLOT_REEL_COUNT - 1]).toEqual(final[SLOT_REEL_COUNT - 1]);
   });
 
   test("render produces code block", () => {
-    const frame = renderSlotsFrame(["🍒", "🍋", "🔔"]);
+    const frame = renderSlotsFrame(["🍒", "🍋", "🔔", "💎", "7️⃣"]);
     expect(frame).toContain("```");
     expect(frame).toContain("🍒");
   });

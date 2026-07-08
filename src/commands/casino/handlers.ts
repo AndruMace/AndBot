@@ -13,6 +13,7 @@ import type { WalletService } from "../../services/wallet";
 import type { BlackjackSessionService } from "../../services/blackjack/session";
 import type { MinesSessionService } from "../../services/casino/mines/session";
 import type { LotteryService } from "../../services/lottery/rounds";
+import type { SlotsJackpotService } from "../../services/casino/slotsJackpot";
 import { LotteryError, InsufficientFundsError as LotteryInsufficientFundsError } from "../../services/lottery/rounds";
 import { MinesSessionError } from "../../services/casino/mines/session";
 import { BlackjackSessionError } from "../../services/blackjack/session";
@@ -486,6 +487,7 @@ export async function handleCasinoWagerBet(
   amountToken: string,
   wallet: WalletService,
   blackjack: BlackjackSessionService,
+  slotsJackpot: SlotsJackpotService,
   config: Config,
 ) {
   const guildId = assertGuild(interaction);
@@ -518,7 +520,7 @@ export async function handleCasinoWagerBet(
       return;
     }
 
-    await executeCasinoGame(interaction, game, amount, wallet, blackjack, config);
+    await executeCasinoGame(interaction, game, amount, wallet, blackjack, slotsJackpot, config);
   } catch (err) {
     if (
       err instanceof InsufficientFundsError ||
@@ -542,6 +544,7 @@ export async function handleCasinoCustomAmountModal(
   game: CasinoGame,
   wallet: WalletService,
   blackjack: BlackjackSessionService,
+  slotsJackpot: SlotsJackpotService,
   config: Config,
 ) {
   const guildId = assertGuild(interaction);
@@ -574,7 +577,7 @@ export async function handleCasinoCustomAmountModal(
       return;
     }
 
-    await executeCasinoGame(interaction, game, amount, wallet, blackjack, config);
+    await executeCasinoGame(interaction, game, amount, wallet, blackjack, slotsJackpot, config);
   } catch (err) {
     if (
       err instanceof BetValidationError ||
@@ -594,6 +597,7 @@ export async function handleCasinoLuckyPick(
   pickToken: string,
   wallet: WalletService,
   blackjack: BlackjackSessionService,
+  slotsJackpot: SlotsJackpotService,
   config: Config,
 ) {
   assertGuild(interaction);
@@ -609,7 +613,7 @@ export async function handleCasinoLuckyPick(
       pick = parseLuckyPick(pickToken);
     }
 
-    await executeLuckyWithPick(interaction, amount, pick, wallet, blackjack, config);
+    await executeLuckyWithPick(interaction, amount, pick, wallet, blackjack, slotsJackpot, config);
   } catch (err) {
     if (
       err instanceof BetValidationError ||
@@ -628,6 +632,7 @@ export async function handleCasinoLuckyCustomModal(
   amountStr: string,
   wallet: WalletService,
   blackjack: BlackjackSessionService,
+  slotsJackpot: SlotsJackpotService,
   config: Config,
 ) {
   assertGuild(interaction);
@@ -636,7 +641,7 @@ export async function handleCasinoLuckyCustomModal(
     const amount = parseWagerAmount(amountStr, config);
     const pick = parseLuckyPick(interaction.fields.getTextInputValue("number"));
     await ensureFunds(wallet, interaction.guildId!, interaction.user.id, amount);
-    await executeLuckyWithPick(interaction, amount, pick, wallet, blackjack, config);
+    await executeLuckyWithPick(interaction, amount, pick, wallet, blackjack, slotsJackpot, config);
   } catch (err) {
     if (
       err instanceof BetValidationError ||

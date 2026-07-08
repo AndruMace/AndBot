@@ -26,6 +26,7 @@ export const transactionTypeEnum = pgEnum("transaction_type", [
   "blackjack_refund",
   "slots_bet",
   "slots_win",
+  "slots_jackpot_win",
   "hilo_bet",
   "hilo_win",
   "lucky_bet",
@@ -248,6 +249,15 @@ export const lotteryTickets = pgTable(
   ],
 );
 
+export const slotsJackpots = pgTable("slots_jackpots", {
+  guildId: text("guild_id").primaryKey(),
+  accumulatedLosses: bigint("accumulated_losses", { mode: "number" }).notNull().default(0),
+  lastWinnerId: text("last_winner_id"),
+  lastWonAt: timestamp("last_won_at", { withTimezone: true }),
+  totalWins: integer("total_wins").notNull().default(0),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export type Wallet = typeof wallets.$inferSelect;
 export type PvpChallenge = typeof pvpChallenges.$inferSelect;
 export type PvpGameType = (typeof pvpGameTypeEnum.enumValues)[number];
@@ -256,4 +266,5 @@ export type BlackjackSession = typeof blackjackSessions.$inferSelect;
 export type MinesSession = typeof minesSessions.$inferSelect;
 export type LotteryRound = typeof lotteryRounds.$inferSelect;
 export type LotteryTicket = typeof lotteryTickets.$inferSelect;
+export type SlotsJackpot = typeof slotsJackpots.$inferSelect;
 export type TransactionType = (typeof transactionTypeEnum.enumValues)[number];
