@@ -27,6 +27,8 @@ import {
   handleCasino,
   handleCasinoMenuButton,
   handleCasinoPick,
+  handleCasinoPlayAgain,
+  handleCasinoChangeSetup,
   handleCasinoCustomWager,
   handleCasinoWagerBet,
   handleCasinoCustomAmountModal,
@@ -48,6 +50,7 @@ import {
   handleCasinoLotteryCustomModal,
   isCasinoGame,
 } from "../commands/casino";
+import { parseCasinoAgainButtonId } from "../commands/casino/replay";
 import {
   handleChallenge,
   handleChallengePick,
@@ -269,8 +272,28 @@ export function registerInteractionHandler(client: Client, db: Database, config:
             return;
           }
 
-          if (action === "again" && isCasinoGame(sub!)) {
-            await handleCasinoPick(interaction, sub!, wallet, config);
+          if (action === "again") {
+            const replay = parseCasinoAgainButtonId([sub!, ...rest]);
+            if (replay) {
+              await handleCasinoPlayAgain(
+                interaction,
+                replay,
+                wallet,
+                blackjack,
+                slotsJackpot,
+                mines,
+                config,
+              );
+              return;
+            }
+            if (isCasinoGame(sub!)) {
+              await handleCasinoPick(interaction, sub!, wallet, config);
+              return;
+            }
+          }
+
+          if (action === "setup" && rest[0] && isCasinoGame(rest[0])) {
+            await handleCasinoChangeSetup(interaction, sub!, rest[0], wallet, config);
             return;
           }
 

@@ -40,6 +40,10 @@ export function getCasinoGameLabel(game: CasinoGame): string {
   return CASINO_GAMES.find((g) => g.id === game)?.label ?? game;
 }
 
+export function isCasinoGame(value: string): value is CasinoGame {
+  return CASINO_GAMES.some((g) => g.id === value);
+}
+
 export function parseLuckyPick(raw: string): number {
   const pick = Number.parseInt(raw.trim(), 10);
   if (Number.isNaN(pick) || pick < 1 || pick > 100) {

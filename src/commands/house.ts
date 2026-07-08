@@ -15,6 +15,7 @@ import { type CoinSide } from "../services/coinflip";
 import { runCoinflipAnimation } from "./casino/presentations";
 import { postPublicGameMessage, buildGameHeader, prefixDescription, type SetupInteraction, rollbackCreatedSession } from "./casino/publicMessage";
 import { casinoPostGameComponents } from "./casino/components";
+import type { CasinoReplayOptions } from "./casino/replay";
 import { InsufficientFundsError } from "../services/wallet";
 import { assertGuild } from "../utils/permissions";
 import { BetValidationError, formatCurrency, validateBetAmount } from "../utils/bets";
@@ -95,8 +96,9 @@ function buildBlackjackComponents(
   sessionId: string,
   canDouble: boolean,
   finished: boolean,
+  replay?: CasinoReplayOptions,
 ): ActionRowBuilder<ButtonBuilder>[] {
-  if (finished) return casinoPostGameComponents("blackjack");
+  if (finished && replay) return casinoPostGameComponents(replay);
 
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
@@ -223,6 +225,12 @@ export async function runBlackjackWithWager(
           (session.playerCards as Card[]).length === 2 &&
           balance >= amount;
 
+        const replay: CasinoReplayOptions = {
+          userId: interaction.user.id,
+          game: "blackjack",
+          amount,
+        };
+
         return {
           embeds: [
             buildBlackjackEmbed(session, config, finished, outcome, {
@@ -231,7 +239,7 @@ export async function runBlackjackWithWager(
               wager: amount,
             }),
           ],
-          components: buildBlackjackComponents(session.id, canDouble, finished),
+          components: buildBlackjackComponents(session.id, canDouble, finished, replay),
         };
       });
 
@@ -275,7 +283,12 @@ export async function runBlackjackWithWager(
     userId: interaction.user.id,
     wager: amount,
   });
-  const components = buildBlackjackComponents(session.id, canDouble, finished);
+  const replay: CasinoReplayOptions = {
+    userId: interaction.user.id,
+    game: "blackjack",
+    amount,
+  };
+  const components = buildBlackjackComponents(session.id, canDouble, finished, replay);
 
   const replyMessage =
     interaction.deferred || interaction.replied
@@ -291,6 +304,68 @@ export async function runBlackjackWithWager(
         });
 
   await blackjack.setMessageId(session.id, replyMessage.id);
+}
+
+export async function replayBlackjackOnMessage(
+  interaction: ButtonInteraction,
+  amount: number,
+  wallet: WalletService,
+  blackjack: BlackjackSessionService,
+  config: Config,
+) {
+  const guildId = assertGuild(interaction);
+  const channelId = interaction.channelId;
+  if (!channelId) {
+    throw new Error("This command can only be used in a server channel.");
+  }
+
+  validateBetAmount(amount, config);
+  const balance = await wallet.getBalance(guildId, interaction.user.id);
+  if (balance < amount) {
+    throw new InsufficientFundsError();
+  }
+
+  const session = await blackjack.startSession(
+    guildId,
+    interaction.user.id,
+    channelId,
+    amount,
+  );
+
+  const finished = session.status === "completed";
+  let outcome: string | undefined;
+  let balanceAfter: number | undefined;
+
+  if (finished) {
+    const result = blackjack.getOutcome(session);
+    balanceAfter = await wallet.getBalance(guildId, interaction.user.id);
+    outcome = formatBlackjackOutcome(result, config, balanceAfter);
+  }
+
+  const canDouble =
+    !finished &&
+    !session.doubled &&
+    (session.playerCards as Card[]).length === 2 &&
+    balance >= amount;
+
+  const replay: CasinoReplayOptions = {
+    userId: interaction.user.id,
+    game: "blackjack",
+    amount,
+  };
+
+  await interaction.message.edit({
+    embeds: [
+      buildBlackjackEmbed(session, config, finished, outcome, {
+        userId: interaction.user.id,
+        isPublic: true,
+        wager: amount,
+      }),
+    ],
+    components: buildBlackjackComponents(session.id, canDouble, finished, replay),
+  });
+
+  await blackjack.setMessageId(session.id, interaction.message.id);
 }
 
 export async function handleBlackjack(
@@ -373,7 +448,12 @@ export async function handleBlackjackButton(
       isPublic: true,
       wager: updated.wager,
     });
-    const components = buildBlackjackComponents(updated.id, canDouble, finished);
+    const replay: CasinoReplayOptions = {
+      userId: interaction.user.id,
+      game: "blackjack",
+      amount: updated.wager,
+    };
+    const components = buildBlackjackComponents(updated.id, canDouble, finished, replay);
 
     await interaction.update({ embeds: [embed], components });
   } catch (err) {

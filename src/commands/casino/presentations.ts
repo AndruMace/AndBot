@@ -135,7 +135,12 @@ export async function runCoinflipAnimation(
         .setTitle(won ? "Coinflip — You Won!" : "Coinflip — You Lost")
         .setDescription(describePublic(ctx, body)),
     ],
-    components: casinoPostGameComponents("coinflip"),
+    components: casinoPostGameComponents({
+      userId,
+      game: "coinflip",
+      amount,
+      coinflipSide: side,
+    }),
   });
 }
 
@@ -190,7 +195,12 @@ export async function runLuckyAnimation(
         .setTitle(payout > 0 ? "Lucky Number — Winner!" : "Lucky Number — Miss")
         .setDescription(describePublic(ctx, body)),
     ],
-    components: casinoPostGameComponents("lucky"),
+    components: casinoPostGameComponents({
+      userId,
+      game: "lucky",
+      amount,
+      luckyPick: pick,
+    }),
   });
 }
 
@@ -250,6 +260,11 @@ export async function runKenoAnimation(
         .setTitle(payout > 0 ? "Keno — Winner!" : "Keno — No Luck")
         .setDescription(describePublic(ctx, body)),
     ],
-    components: casinoPostGameComponents("keno"),
+    components: casinoPostGameComponents({
+      userId,
+      game: "keno",
+      amount,
+      kenoPicks: picks,
+    }),
   });
 }

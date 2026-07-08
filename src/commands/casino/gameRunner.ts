@@ -87,7 +87,7 @@ export async function recordCasinoWager(
   await wallet.setLastWager(guildId, userId, amount);
 }
 
-async function runSlotsAnimation(
+export async function runSlotsAnimation(
   edit: PublicMessageEdit,
   guildId: string,
   userId: string,
@@ -171,11 +171,15 @@ async function runSlotsAnimation(
         )
         .setDescription(describePublic(userId, "slots", amount, config, body)),
     ],
-    components: casinoPostGameComponents("slots"),
+    components: casinoPostGameComponents({
+      userId,
+      game: "slots",
+      amount,
+    }),
   });
 }
 
-async function runPlinkoAnimation(
+export async function runPlinkoAnimation(
   edit: PublicMessageEdit,
   guildId: string,
   userId: string,
@@ -222,7 +226,11 @@ async function runPlinkoAnimation(
         .setTitle("Plinko — Result")
         .setDescription(describePublic(userId, "plinko", amount, config, body)),
     ],
-    components: casinoPostGameComponents("plinko"),
+    components: casinoPostGameComponents({
+      userId,
+      game: "plinko",
+      amount,
+    }),
   });
 }
 

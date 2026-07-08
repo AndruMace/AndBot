@@ -9,6 +9,11 @@ import {
 import { buildButtonId } from "../../utils/buttons";
 import type { Config } from "../../config";
 import { CASINO_GAMES, type CasinoGame } from "./types";
+import {
+  casinoAgainButtonId,
+  casinoSetupButtonId,
+  type CasinoReplayOptions,
+} from "./replay";
 import { LOTTERY_MENU } from "./lottery-menu";
 import {
   formatWagerButtonLabel,
@@ -76,13 +81,18 @@ export function casinoMenuRows(): ActionRowBuilder<ButtonBuilder>[] {
   return rows;
 }
 
-export function casinoPostGameRow(game: CasinoGame): ActionRowBuilder<ButtonBuilder> {
+export function casinoPostGameRow(replay: CasinoReplayOptions): ActionRowBuilder<ButtonBuilder> {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
-      .setCustomId(buildButtonId("casino", "again", game))
+      .setCustomId(casinoAgainButtonId(replay))
       .setLabel("Play Again")
       .setStyle(ButtonStyle.Primary)
       .setEmoji("🔁"),
+    new ButtonBuilder()
+      .setCustomId(casinoSetupButtonId(replay.userId, replay.game))
+      .setLabel("New Wager")
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji("✏️"),
     new ButtonBuilder()
       .setCustomId(buildButtonId("casino", "menu"))
       .setLabel("Casino Menu")
@@ -91,8 +101,10 @@ export function casinoPostGameRow(game: CasinoGame): ActionRowBuilder<ButtonBuil
   );
 }
 
-export function casinoPostGameComponents(game: CasinoGame): ActionRowBuilder<ButtonBuilder>[] {
-  return [casinoPostGameRow(game)];
+export function casinoPostGameComponents(
+  replay: CasinoReplayOptions,
+): ActionRowBuilder<ButtonBuilder>[] {
+  return [casinoPostGameRow(replay)];
 }
 
 export function coinflipSideRow(userId: string, amount: number): ActionRowBuilder<ButtonBuilder> {

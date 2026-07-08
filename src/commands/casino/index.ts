@@ -7,6 +7,8 @@ export {
   handleCasino,
   handleCasinoMenuButton,
   handleCasinoPick,
+  handleCasinoPlayAgain,
+  handleCasinoChangeSetup,
   handleCasinoCustomWager,
   handleCasinoWagerBet,
   handleCasinoCustomAmountModal,
@@ -26,6 +28,6 @@ export {
   handleCasinoLotteryStatus,
   handleCasinoLotteryCustomPrompt,
   handleCasinoLotteryCustomModal,
-  isCasinoGame,
 } from "./handlers";
 export type { CasinoGame } from "./types";
+export { isCasinoGame } from "./types";
