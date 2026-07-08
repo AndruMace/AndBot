@@ -8,7 +8,7 @@ import {
   renderCoinflipSpinFrame,
 } from "./coinflipAnim";
 import { buildLuckyFrames, renderLuckyFrame } from "./luckyAnim";
-import { calculatePlinkoPayout, dropPlinko, generatePlinkoPath, renderPlinkoFrame, PLINKO_BUCKETS, PLINKO_PEG_ROWS, PLINKO_COL_WIDTH } from "./plinko";
+import { calculatePlinkoPayout, dropPlinko, generatePlinkoPath, getPlinkoExpectedRtp, renderPlinkoFrame, PLINKO_BUCKETS, PLINKO_PEG_ROWS, PLINKO_COL_WIDTH } from "./plinko";
 import { gemMultiplier, generateMinePositions, calculateMinesPayout } from "./mines/engine";
 import {
   calculateKenoPayout,
@@ -113,6 +113,12 @@ describe("plinko", () => {
 
   test("calculates payout", () => {
     expect(calculatePlinkoPayout(100, { label: "2x", multiplier: 2, weight: 1 })).toBe(200);
+  });
+
+  test("expected RTP is near 95%", () => {
+    expect(getPlinkoExpectedRtp(100)).toBeGreaterThan(0.94);
+    expect(getPlinkoExpectedRtp(100)).toBeLessThan(0.96);
+    expect(getPlinkoExpectedRtp(10)).toBeGreaterThan(0.94);
   });
 
   test("path ends at target bucket", () => {
