@@ -51,8 +51,8 @@ export function spinSlots(): SlotReels {
   ];
 }
 
-export const SLOTS_SPIN_TICKS = 2;
-export const SLOTS_FRAME_DELAY_MS = 300;
+export const SLOTS_SPIN_TICKS = 4;
+export const SLOTS_FRAME_DELAY_MS = 400;
 
 /** Spin all reels, then stop left → right on the final result. */
 export function buildSlotsFrames(
