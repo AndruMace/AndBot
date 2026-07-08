@@ -6,7 +6,8 @@ import {
   type RouletteBet,
 } from "./roulette";
 
-export const ROULETTE_FRAME_DELAYS = [120, 120, 160, 200, 280, 360, 480, 600] as const;
+export const ROULETTE_MIN_SPIN_STEPS = 26;
+export const ROULETTE_MAX_SPIN_STEPS = 34;
 
 const WHEEL_LEN = EUROPEAN_WHEEL_ORDER.length;
 
@@ -20,52 +21,73 @@ function pocketAt(index: number): number {
   return EUROPEAN_WHEEL_ORDER[((index % WHEEL_LEN) + WHEEL_LEN) % WHEEL_LEN]!;
 }
 
-function formatPocket(n: number, highlighted: boolean): string {
-  const label = n === 0 ? "0" : String(n).padStart(2, " ");
-  return highlighted ? `[${label}]` : ` ${label} `;
+function formatColoredPocket(n: number, highlighted: boolean): string {
+  const emoji = COLOR_EMOJI[colorOf(n)];
+  const num = n === 0 ? "0" : String(n).padStart(2, " ");
+  const core = `${emoji}${num}`;
+  return highlighted ? `[${core}]` : ` ${core} `;
 }
+
+export type RouletteFrameOptions = {
+  spinning?: boolean;
+  showBet?: boolean;
+};
 
 export function renderRouletteFrame(
   centerIndex: number,
   bet: RouletteBet,
-  spinning: boolean,
+  options: RouletteFrameOptions = {},
 ): string {
-  const center = pocketAt(centerIndex);
+  const { spinning = false, showBet = true } = options;
   const left2 = pocketAt(centerIndex - 2);
   const left1 = pocketAt(centerIndex - 1);
+  const center = pocketAt(centerIndex);
   const right1 = pocketAt(centerIndex + 1);
   const right2 = pocketAt(centerIndex + 2);
-  const emoji = COLOR_EMOJI[colorOf(center)];
 
-  const lines = [
-    "        ▼",
-    `${formatPocket(left2, false)} ${formatPocket(left1, false)} ${formatPocket(center, true)} ${formatPocket(right1, false)} ${formatPocket(right2, false)}`,
-    `       ${emoji} ${center}`,
-    `Your bet: **${ROULETTE_BET_LABELS[bet]}**`,
-  ];
+  const art = [
+    "```",
+    "      ▼",
+    [
+      formatColoredPocket(left2, false),
+      formatColoredPocket(left1, false),
+      formatColoredPocket(center, true),
+      formatColoredPocket(right1, false),
+      formatColoredPocket(right2, false),
+    ].join(""),
+    "```",
+  ].join("\n");
 
+  const lines = [art];
+  if (showBet) {
+    lines.push(`Your bet: **${ROULETTE_BET_LABELS[bet]}**`);
+  }
   if (spinning) {
     lines.push("*Spinning...*");
   }
 
-  return ["```", ...lines, "```"].join("\n");
+  return lines.join("\n");
 }
 
-/** Indices into EUROPEAN_WHEEL_ORDER — last entry centers the result under the pointer. */
+/** Decelerating delay (ms) for spin frame `step` of `totalDelays` gaps. */
+export function rouletteDelayForStep(step: number, totalDelays: number): number {
+  if (totalDelays <= 1) return 120;
+  const t = step / (totalDelays - 1);
+  return Math.round(90 + t * t * 460);
+}
+
+/** Wheel indices — one pocket per frame; last entry centers the result under the pointer. */
 export function buildRouletteSpinIndices(result: number): number[] {
   const targetIndex = wheelIndexForResult(result);
-  const startOffset = crypto.getRandomValues(new Uint32Array(1))[0]! % WHEEL_LEN;
-  const startIndex = targetIndex - startOffset;
-  const totalSteps = WHEEL_LEN * 2 + startOffset;
-  const frameCount = ROULETTE_FRAME_DELAYS.length + 1;
+  const span = ROULETTE_MAX_SPIN_STEPS - ROULETTE_MIN_SPIN_STEPS + 1;
+  const totalSteps =
+    ROULETTE_MIN_SPIN_STEPS + (crypto.getRandomValues(new Uint32Array(1))[0]! % span);
+  const startIndex = targetIndex - totalSteps;
 
   const indices: number[] = [];
-  for (let frame = 0; frame < frameCount; frame++) {
-    const progress = frame / (frameCount - 1);
-    const step = Math.round(progress * totalSteps);
+  for (let step = 0; step <= totalSteps; step++) {
     indices.push(startIndex + step);
   }
-
   indices[indices.length - 1] = targetIndex;
   return indices;
 }

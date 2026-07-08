@@ -47,7 +47,7 @@ import {
 import {
   buildRouletteSpinIndices,
   renderRouletteFrame,
-  ROULETTE_FRAME_DELAYS,
+  rouletteDelayForStep,
   sleep as rouletteSleep,
 } from "../../services/casino/rouletteAnim";
 import { getCasinoGameLabel, type CasinoGame } from "./types";
@@ -233,10 +233,14 @@ export async function runRouletteAnimation(
   })();
 
   const indices = buildRouletteSpinIndices(result);
+  const spinFrames = indices.length - 1;
+  const totalDelays = Math.max(spinFrames - 1, 1);
 
-  for (let step = 0; step < indices.length; step++) {
-    const spinning = step < indices.length - 1;
-    const body = renderRouletteFrame(indices[step]!, bet, spinning);
+  for (let step = 0; step < spinFrames; step++) {
+    if (step > 0) {
+      await rouletteSleep(rouletteDelayForStep(step - 1, totalDelays));
+    }
+    const body = renderRouletteFrame(indices[step]!, bet, { spinning: true });
     await edit({
       embeds: [
         new EmbedBuilder()
@@ -245,14 +249,11 @@ export async function runRouletteAnimation(
           .setDescription(describePublic(userId, "roulette", amount, config, body)),
       ],
     });
-    if (spinning && step < ROULETTE_FRAME_DELAYS.length) {
-      await rouletteSleep(ROULETTE_FRAME_DELAYS[step]!);
-    }
   }
 
   const balance = await settlement;
   const body =
-    `${renderRouletteFrame(indices[indices.length - 1]!, bet, false)}\n` +
+    `${renderRouletteFrame(indices[indices.length - 1]!, bet, { showBet: false })}\n` +
     `${description}\n` +
     `Your bet: **${ROULETTE_BET_LABELS[bet]}**\n` +
     publicResultFooter(amount, payout, config, { lost: !won, balance });
