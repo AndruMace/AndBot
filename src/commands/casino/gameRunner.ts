@@ -38,8 +38,28 @@ import {
   PLINKO_FRAME_DELAY_MS,
 } from "../../services/casino/plinko";
 import { formatCurrency } from "../../utils/bets";
+import {
+  calculateRoulettePayout,
+  ROULETTE_BET_LABELS,
+  spinRoulette,
+  type RouletteBet,
+} from "../../services/casino/roulette";
+import {
+  buildRouletteSpinIndices,
+  renderRouletteFrame,
+  ROULETTE_FRAME_DELAYS,
+  sleep as rouletteSleep,
+} from "../../services/casino/rouletteAnim";
 import { getCasinoGameLabel, type CasinoGame } from "./types";
-import { coinflipSideRow, hiloChoiceRow, minesCountRow, luckyNumberRows, kenoPickRows, casinoPostGameComponents } from "./components";
+import {
+  coinflipSideRow,
+  hiloChoiceRow,
+  minesCountRow,
+  luckyNumberRows,
+  kenoPickRows,
+  rouletteBetRow,
+  casinoPostGameComponents,
+} from "./components";
 import {
   buildGameHeader,
   postPublicGameMessage,
@@ -186,6 +206,73 @@ export async function runSlotsAnimation(
   });
 }
 
+export async function runRouletteAnimation(
+  edit: PublicMessageEdit,
+  guildId: string,
+  userId: string,
+  amount: number,
+  bet: RouletteBet,
+  wallet: WalletService,
+  config: Config,
+) {
+  const result = spinRoulette();
+  const { payout, won, description } = calculateRoulettePayout(amount, bet, result);
+
+  const settlement = (async () => {
+    let balance = await wallet.debit(guildId, userId, amount, "roulette_bet", undefined, {
+      bet,
+      result,
+    });
+    if (payout > 0) {
+      balance = await wallet.credit(guildId, userId, payout, "roulette_win", undefined, {
+        bet,
+        result,
+      });
+    }
+    return balance;
+  })();
+
+  const indices = buildRouletteSpinIndices(result);
+
+  for (let step = 0; step < indices.length; step++) {
+    const spinning = step < indices.length - 1;
+    const body = renderRouletteFrame(indices[step]!, bet, spinning);
+    await edit({
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0xc0392b)
+          .setTitle("Roulette")
+          .setDescription(describePublic(userId, "roulette", amount, config, body)),
+      ],
+    });
+    if (spinning && step < ROULETTE_FRAME_DELAYS.length) {
+      await rouletteSleep(ROULETTE_FRAME_DELAYS[step]!);
+    }
+  }
+
+  const balance = await settlement;
+  const body =
+    `${renderRouletteFrame(indices[indices.length - 1]!, bet, false)}\n` +
+    `${description}\n` +
+    `Your bet: **${ROULETTE_BET_LABELS[bet]}**\n` +
+    publicResultFooter(amount, payout, config, { lost: !won, balance });
+
+  await edit({
+    embeds: [
+      new EmbedBuilder()
+        .setColor(won ? 0x57f287 : 0xed4245)
+        .setTitle(won ? "Roulette — Winner!" : "Roulette — No Luck")
+        .setDescription(describePublic(userId, "roulette", amount, config, body)),
+    ],
+    components: casinoPostGameComponents({
+      userId,
+      game: "roulette",
+      amount,
+      rouletteBet: bet,
+    }),
+  });
+}
+
 export async function runPlinkoAnimation(
   edit: PublicMessageEdit,
   guildId: string,
@@ -267,6 +354,20 @@ export async function executeCasinoGame(
       await postPublicGameMessage(interaction, {
         embeds: [embed],
         components: [coinflipSideRow(userId, amount)],
+      });
+      return;
+    }
+
+    case "roulette": {
+      const embed = new EmbedBuilder()
+        .setColor(0xc0392b)
+        .setTitle("Roulette")
+        .setDescription(
+          describePublic(userId, game, amount, config, "Pick your bet:"),
+        );
+      await postPublicGameMessage(interaction, {
+        embeds: [embed],
+        components: [rouletteBetRow(userId, amount)],
       });
       return;
     }

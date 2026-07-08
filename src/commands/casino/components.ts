@@ -107,6 +107,34 @@ export function casinoPostGameComponents(
   return [casinoPostGameRow(replay)];
 }
 
+export function rouletteBetRow(userId: string, amount: number): ActionRowBuilder<ButtonBuilder> {
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId(buildButtonId("casino", "ro", "red", userId, String(amount)))
+      .setLabel("Red")
+      .setStyle(ButtonStyle.Danger)
+      .setEmoji("🔴"),
+    new ButtonBuilder()
+      .setCustomId(buildButtonId("casino", "ro", "black", userId, String(amount)))
+      .setLabel("Black")
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji("⚫"),
+    new ButtonBuilder()
+      .setCustomId(buildButtonId("casino", "ro", "odd", userId, String(amount)))
+      .setLabel("Odd")
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId(buildButtonId("casino", "ro", "even", userId, String(amount)))
+      .setLabel("Even")
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId(buildButtonId("casino", "ro", "zero", userId, String(amount)))
+      .setLabel("0 (36×)")
+      .setStyle(ButtonStyle.Success)
+      .setEmoji("🟢"),
+  );
+}
+
 export function coinflipSideRow(userId: string, amount: number): ActionRowBuilder<ButtonBuilder> {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()

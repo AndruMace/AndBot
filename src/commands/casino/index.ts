@@ -19,6 +19,7 @@ export {
   handleCasinoKenoCustomModal,
   handleCasinoKenoCustomPrompt,
   handleCasinoCoinflipSide,
+  handleCasinoRouletteBet,
   handleCasinoHiLo,
   handleCasinoMinesConfig,
   handleCasinoMinesReveal,

@@ -62,9 +62,11 @@ import {
   showLuckyNumberPicker,
   runSlotsAnimation,
   runPlinkoAnimation,
+  runRouletteAnimation,
   recordCasinoWager,
 } from "./gameRunner";
 import { generateQuickPick } from "../../services/casino/keno";
+import { type RouletteBet } from "../../services/casino/roulette";
 import { runCoinflipAnimation, runLuckyAnimation, runKenoAnimation } from "./presentations";
 import { replayBlackjackOnMessage } from "../house";
 import { type CasinoReplayOptions } from "./replay";
@@ -529,6 +531,17 @@ export async function handleCasinoPlayAgain(
       case "plinko":
         await runPlinkoAnimation(edit, guildId, replay.userId, amount, wallet, config);
         return;
+      case "roulette":
+        await runRouletteAnimation(
+          edit,
+          guildId,
+          replay.userId,
+          amount,
+          replay.rouletteBet!,
+          wallet,
+          config,
+        );
+        return;
       case "coinflip":
         await runCoinflipAnimation(
           edit,
@@ -919,6 +932,47 @@ export async function handleCasinoKenoCustomModal(
         await interaction.editReply(payload);
       } else {
         await interaction.reply(payload);
+      }
+      return;
+    }
+    throw err;
+  }
+}
+
+export async function handleCasinoRouletteBet(
+  interaction: ButtonInteraction,
+  bet: RouletteBet,
+  ownerId: string,
+  amountStr: string,
+  wallet: WalletService,
+  config: Config,
+) {
+  const guildId = assertGuild(interaction);
+  if (interaction.user.id !== ownerId) {
+    await interaction.reply({ content: "This is not your roulette game.", ephemeral: true });
+    return;
+  }
+
+  try {
+    const amount = parseWagerAmount(amountStr, config);
+    await ensureFunds(wallet, guildId, interaction.user.id, amount);
+    await interaction.deferUpdate();
+    await runRouletteAnimation(
+      (p) => interaction.editReply({ ...p, content: null, components: p.components ?? [] }),
+      guildId,
+      interaction.user.id,
+      amount,
+      bet,
+      wallet,
+      config,
+    );
+  } catch (err) {
+    if (err instanceof BetValidationError || err instanceof InsufficientFundsError) {
+      const payload = { content: err.message, embeds: [], components: [] as [] };
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply(payload);
+      } else {
+        await interaction.reply({ content: err.message, ephemeral: true });
       }
       return;
     }

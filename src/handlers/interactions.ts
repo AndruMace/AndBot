@@ -39,6 +39,7 @@ import {
   handleCasinoKenoCustomModal,
   handleCasinoKenoCustomPrompt,
   handleCasinoCoinflipSide,
+  handleCasinoRouletteBet,
   handleCasinoHiLo,
   handleCasinoMinesConfig,
   handleCasinoMinesReveal,
@@ -51,6 +52,7 @@ import {
   isCasinoGame,
 } from "../commands/casino";
 import { parseCasinoAgainButtonId } from "../commands/casino/replay";
+import { parseRouletteBet } from "../services/casino/roulette";
 import {
   handleChallenge,
   handleChallengePick,
@@ -378,6 +380,23 @@ export function registerInteractionHandler(client: Client, db: Database, config:
               );
               return;
             }
+          }
+
+          if (action === "ro" && rest.length >= 2) {
+            try {
+              const bet = parseRouletteBet(sub!);
+              await handleCasinoRouletteBet(
+                interaction,
+                bet,
+                rest[0]!,
+                rest[1]!,
+                wallet,
+                config,
+              );
+            } catch {
+              await interaction.reply({ content: "Invalid roulette bet.", ephemeral: true });
+            }
+            return;
           }
 
           if (action === "cf" && rest.length >= 2) {

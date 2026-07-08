@@ -38,6 +38,8 @@ export const transactionTypeEnum = pgEnum("transaction_type", [
   "plinko_win",
   "keno_bet",
   "keno_win",
+  "roulette_bet",
+  "roulette_win",
   "pvp_escrow",
   "pvp_payout",
   "pvp_refund",

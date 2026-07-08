@@ -1,5 +1,6 @@
 import type { CoinSide } from "../../services/coinflip";
 import type { MinesCount } from "../../services/casino/mines/engine";
+import type { RouletteBet } from "../../services/casino/roulette";
 import { buildButtonId } from "../../utils/buttons";
 import { isCasinoGame, type CasinoGame } from "./types";
 
@@ -11,6 +12,7 @@ export type CasinoReplayOptions = {
   luckyPick?: number;
   kenoPicks?: number[];
   minesCount?: MinesCount;
+  rouletteBet?: RouletteBet;
 };
 
 export function casinoAgainButtonId(replay: CasinoReplayOptions): string {
@@ -19,6 +21,7 @@ export function casinoAgainButtonId(replay: CasinoReplayOptions): string {
   else if (replay.luckyPick != null) parts.push(String(replay.luckyPick));
   else if (replay.kenoPicks?.length) parts.push(replay.kenoPicks.join("-"));
   else if (replay.minesCount != null) parts.push(String(replay.minesCount));
+  else if (replay.rouletteBet) parts.push(replay.rouletteBet);
   return buildButtonId("casino", "again", ...parts);
 }
 
@@ -56,6 +59,18 @@ export function parseCasinoAgainButtonId(parts: string[]): CasinoReplayOptions |
       const minesCount = Number.parseInt(extra, 10);
       if (![3, 5, 8].includes(minesCount)) return null;
       return { ...base, minesCount: minesCount as MinesCount };
+    }
+    case "roulette": {
+      if (
+        extra !== "red" &&
+        extra !== "black" &&
+        extra !== "odd" &&
+        extra !== "even" &&
+        extra !== "zero"
+      ) {
+        return null;
+      }
+      return { ...base, rouletteBet: extra };
     }
     default:
       return base;

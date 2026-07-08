@@ -66,6 +66,22 @@ describe("casino replay buttons", () => {
     });
   });
 
+  test("round-trips roulette replay", () => {
+    const id = casinoAgainButtonId({
+      userId: USER,
+      game: "roulette",
+      amount: 250,
+      rouletteBet: "red",
+    });
+    const parts = id.replace("casino:", "").split(":");
+    expect(parseCasinoAgainButtonId(parts.slice(1))).toEqual({
+      userId: USER,
+      game: "roulette",
+      amount: 250,
+      rouletteBet: "red",
+    });
+  });
+
   test("setup button encodes owner and game", () => {
     expect(casinoSetupButtonId(USER, "plinko")).toBe(`casino:setup:${USER}:plinko`);
   });
