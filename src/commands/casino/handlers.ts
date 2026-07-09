@@ -81,6 +81,7 @@ import {
   prefixDescription,
   publicResultFooter,
   rollbackCreatedSession,
+  PublicGameMessageError,
 } from "./publicMessage";
 import {
   resolveWagerAmount,
@@ -647,7 +648,8 @@ export async function handleCasinoPlayAgain(
       err instanceof BetValidationError ||
       err instanceof BlackjackSessionError ||
       err instanceof MinesSessionError ||
-      err instanceof HiloSessionError
+      err instanceof HiloSessionError ||
+      err instanceof PublicGameMessageError
     ) {
       const payload = { content: err.message, embeds: [], components: [] as [] };
       if (interaction.deferred || interaction.replied) {
@@ -735,7 +737,8 @@ export async function handleCasinoWagerBet(
       err instanceof InsufficientFundsError ||
       err instanceof BetValidationError ||
       err instanceof BlackjackSessionError ||
-      err instanceof HiloSessionError
+      err instanceof HiloSessionError ||
+      err instanceof PublicGameMessageError
     ) {
       const payload = { content: err.message };
       if (interaction.deferred || interaction.replied) {
@@ -794,7 +797,8 @@ export async function handleCasinoCustomAmountModal(
       err instanceof BetValidationError ||
       err instanceof InsufficientFundsError ||
       err instanceof BlackjackSessionError ||
-      err instanceof HiloSessionError
+      err instanceof HiloSessionError ||
+      err instanceof PublicGameMessageError
     ) {
       await interaction.reply({ content: err.message, ephemeral: true });
       return;

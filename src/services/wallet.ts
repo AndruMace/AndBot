@@ -1,5 +1,5 @@
 import { eq, and } from "drizzle-orm";
-import type { Database } from "../db/client";
+import type { Database, DbTransaction } from "../db/client";
 import { wallets, transactions, type TransactionType } from "../db/schema";
 import type { Config } from "../config";
 
@@ -61,19 +61,20 @@ export class WalletService {
     type: TransactionType,
     referenceId?: string,
     metadata?: Record<string, unknown>,
+    tx?: DbTransaction,
   ): Promise<number> {
     if (amount <= 0) throw new Error("Credit amount must be positive.");
 
-    return this.db.transaction(async (tx) => {
-      const wallet = await this.lockWallet(tx, guildId, userId);
+    const run = async (transaction: DbTransaction) => {
+      const wallet = await this.lockWallet(transaction, guildId, userId);
       const newBalance = wallet.balance + amount;
 
-      await tx
+      await transaction
         .update(wallets)
         .set({ balance: newBalance, updatedAt: new Date() })
         .where(eq(wallets.id, wallet.id));
 
-      await tx.insert(transactions).values({
+      await transaction.insert(transactions).values({
         guildId,
         userId,
         amount,
@@ -83,7 +84,10 @@ export class WalletService {
       });
 
       return newBalance;
-    });
+    };
+
+    if (tx) return run(tx);
+    return this.db.transaction(run);
   }
 
   async debit(
@@ -93,23 +97,24 @@ export class WalletService {
     type: TransactionType,
     referenceId?: string,
     metadata?: Record<string, unknown>,
+    tx?: DbTransaction,
   ): Promise<number> {
     if (amount <= 0) throw new Error("Debit amount must be positive.");
 
-    return this.db.transaction(async (tx) => {
-      const wallet = await this.lockWallet(tx, guildId, userId);
+    const run = async (transaction: DbTransaction) => {
+      const wallet = await this.lockWallet(transaction, guildId, userId);
       if (wallet.balance < amount) {
         throw new InsufficientFundsError();
       }
 
       const newBalance = wallet.balance - amount;
 
-      await tx
+      await transaction
         .update(wallets)
         .set({ balance: newBalance, updatedAt: new Date() })
         .where(eq(wallets.id, wallet.id));
 
-      await tx.insert(transactions).values({
+      await transaction.insert(transactions).values({
         guildId,
         userId,
         amount: -amount,
@@ -119,7 +124,10 @@ export class WalletService {
       });
 
       return newBalance;
-    });
+    };
+
+    if (tx) return run(tx);
+    return this.db.transaction(run);
   }
 
   async transfer(guildId: string, fromId: string, toId: string, amount: number): Promise<void> {
@@ -270,7 +278,7 @@ export class WalletService {
   }
 
   private async lockWallet(
-    tx: Parameters<Parameters<Database["transaction"]>[0]>[0],
+    tx: DbTransaction,
     guildId: string,
     userId: string,
   ) {

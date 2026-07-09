@@ -6,6 +6,8 @@ import { registerActivityHandler } from "./services/activity";
 import { createWalletService } from "./services/wallet";
 import { createLotteryService } from "./services/lottery/rounds";
 import { startLotteryScheduler } from "./services/lottery/scheduler";
+import { createBlackjackSessionService } from "./services/blackjack/session";
+import { startBlackjackScheduler } from "./services/blackjack/scheduler";
 
 const config = loadConfig();
 const db = getDb(config.DATABASE_URL);
@@ -13,10 +15,12 @@ const client = createClient();
 
 const wallet = createWalletService(db, config);
 const lottery = createLotteryService(db, wallet, config);
+const blackjack = createBlackjackSessionService(db, wallet, config);
 
 registerInteractionHandler(client, db, config);
 registerActivityHandler(client, wallet, config);
 let lotteryScheduler: ReturnType<typeof setInterval> | undefined;
+let blackjackScheduler: ReturnType<typeof setInterval> | undefined;
 
 client.once("clientReady", async () => {
   console.log(`Logged in as ${client.user?.tag}`);
@@ -29,11 +33,13 @@ client.once("clientReady", async () => {
   );
 
   lotteryScheduler = startLotteryScheduler(client, lottery, config);
+  blackjackScheduler = startBlackjackScheduler(blackjack);
 });
 
 process.on("SIGINT", async () => {
   console.log("Shutting down...");
   if (lotteryScheduler) clearInterval(lotteryScheduler);
+  if (blackjackScheduler) clearInterval(blackjackScheduler);
   client.destroy();
   await closeDb();
   process.exit(0);
@@ -41,6 +47,7 @@ process.on("SIGINT", async () => {
 
 process.on("SIGTERM", async () => {
   if (lotteryScheduler) clearInterval(lotteryScheduler);
+  if (blackjackScheduler) clearInterval(blackjackScheduler);
   client.destroy();
   await closeDb();
   process.exit(0);

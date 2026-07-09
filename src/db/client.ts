@@ -22,3 +22,4 @@ export async function closeDb() {
 }
 
 export type Database = ReturnType<typeof getDb>;
+export type DbTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
