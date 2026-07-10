@@ -253,7 +253,7 @@ export class BlackjackSessionService {
   }
 
   /** Refund and close an active session. Returns false if already settled. */
-  async expireSession(session: BlackjackSession): Promise<boolean> {
+  async expireSession(session: Pick<BlackjackSession, "id">): Promise<boolean> {
     return this.db.transaction(async (tx) => this.expireSessionInTx(tx, session));
   }
 
@@ -264,7 +264,11 @@ export class BlackjackSessionService {
 
   async reconcileDuplicateActiveSessions(): Promise<number> {
     const rows = await this.db
-      .select()
+      .select({
+        id: blackjackSessions.id,
+        guildId: blackjackSessions.guildId,
+        userId: blackjackSessions.userId,
+      })
       .from(blackjackSessions)
       .where(eq(blackjackSessions.status, "active"))
       .orderBy(desc(blackjackSessions.createdAt));
@@ -286,7 +290,7 @@ export class BlackjackSessionService {
 
   async sweepExpiredSessions(limit = 50): Promise<number> {
     const stale = await this.db
-      .select()
+      .select({ id: blackjackSessions.id })
       .from(blackjackSessions)
       .where(
         and(
@@ -352,7 +356,10 @@ export class BlackjackSessionService {
     return session;
   }
 
-  private async expireSessionInTx(tx: DbTransaction, session: BlackjackSession): Promise<boolean> {
+  private async expireSessionInTx(
+    tx: DbTransaction,
+    session: Pick<BlackjackSession, "id">,
+  ): Promise<boolean> {
     const [locked] = await tx
       .select()
       .from(blackjackSessions)

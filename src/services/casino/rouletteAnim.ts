@@ -6,8 +6,8 @@ import {
   type RouletteBet,
 } from "./roulette";
 
-export const ROULETTE_MIN_SPIN_STEPS = 26;
-export const ROULETTE_MAX_SPIN_STEPS = 34;
+export const ROULETTE_MIN_SPIN_STEPS = 10;
+export const ROULETTE_MAX_SPIN_STEPS = 14;
 /** Pause on the landed pocket before revealing win/loss. */
 export const ROULETTE_FINAL_PAUSE_MS = 1000;
 

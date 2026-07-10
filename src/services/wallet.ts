@@ -50,6 +50,14 @@ export class WalletService {
   }
 
   async getBalance(guildId: string, userId: string): Promise<number> {
+    const [existing] = await this.db
+      .select({ balance: wallets.balance })
+      .from(wallets)
+      .where(and(eq(wallets.guildId, guildId), eq(wallets.userId, userId)))
+      .limit(1);
+
+    if (existing) return existing.balance;
+
     const wallet = await this.getOrCreateWallet(guildId, userId);
     return wallet.balance;
   }
@@ -135,20 +143,21 @@ export class WalletService {
     if (amount <= 0) throw new Error("Transfer amount must be positive.");
 
     await this.db.transaction(async (tx) => {
-      const fromWallet = await this.lockWallet(tx, guildId, fromId);
-      await this.lockWallet(tx, guildId, toId);
+      // Lock wallets in deterministic order to avoid deadlocks when two
+      // users transfer to each other concurrently.
+      const [firstId, secondId] = [fromId, toId].sort();
+      const firstWallet = await this.lockWallet(tx, guildId, firstId!);
+      const secondWallet = await this.lockWallet(tx, guildId, secondId!);
+
+      const fromWallet = firstId === fromId ? firstWallet : secondWallet;
+      const toWallet = firstId === fromId ? secondWallet : firstWallet;
 
       if (fromWallet.balance < amount) {
         throw new InsufficientFundsError();
       }
 
       const fromBalance = fromWallet.balance - amount;
-      const toWallet = await tx
-        .select()
-        .from(wallets)
-        .where(and(eq(wallets.guildId, guildId), eq(wallets.userId, toId)))
-        .for("update");
-      const toBalance = (toWallet[0]?.balance ?? 0) + amount;
+      const toBalance = toWallet.balance + amount;
 
       await tx
         .update(wallets)
@@ -158,9 +167,7 @@ export class WalletService {
       await tx
         .update(wallets)
         .set({ balance: toBalance, updatedAt: new Date() })
-        .where(
-          and(eq(wallets.guildId, guildId), eq(wallets.userId, toId)),
-        );
+        .where(eq(wallets.id, toWallet.id));
 
       await tx.insert(transactions).values([
         {
@@ -199,17 +206,14 @@ export class WalletService {
   }
 
   async updateDailyClaim(guildId: string, userId: string, streak: number): Promise<void> {
-    await this.db.transaction(async (tx) => {
-      const wallet = await this.lockWallet(tx, guildId, userId);
-      await tx
-        .update(wallets)
-        .set({
-          lastDailyAt: new Date(),
-          dailyStreak: streak,
-          updatedAt: new Date(),
-        })
-        .where(eq(wallets.id, wallet.id));
-    });
+    await this.db
+      .update(wallets)
+      .set({
+        lastDailyAt: new Date(),
+        dailyStreak: streak,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(wallets.guildId, guildId), eq(wallets.userId, userId)));
   }
 
   async tryMessageReward(
@@ -258,23 +262,17 @@ export class WalletService {
     userId: string,
     field: "lastDailyAt" | "lastWeeklyAt",
   ): Promise<void> {
-    await this.db.transaction(async (tx) => {
-      const wallet = await this.lockWallet(tx, guildId, userId);
-      await tx
-        .update(wallets)
-        .set({ [field]: new Date(), updatedAt: new Date() })
-        .where(eq(wallets.id, wallet.id));
-    });
+    await this.db
+      .update(wallets)
+      .set({ [field]: new Date(), updatedAt: new Date() })
+      .where(and(eq(wallets.guildId, guildId), eq(wallets.userId, userId)));
   }
 
   async setLastWager(guildId: string, userId: string, amount: number): Promise<void> {
-    await this.db.transaction(async (tx) => {
-      const wallet = await this.lockWallet(tx, guildId, userId);
-      await tx
-        .update(wallets)
-        .set({ lastWager: amount, updatedAt: new Date() })
-        .where(eq(wallets.id, wallet.id));
-    });
+    await this.db
+      .update(wallets)
+      .set({ lastWager: amount, updatedAt: new Date() })
+      .where(and(eq(wallets.guildId, guildId), eq(wallets.userId, userId)));
   }
 
   private async lockWallet(

@@ -20,7 +20,7 @@ const lottery = createLotteryService(db, wallet, config);
 const blackjack = createBlackjackSessionService(db, wallet, config);
 const hilo = createHiloSessionService(db, wallet, config);
 
-registerInteractionHandler(client, db, config);
+registerInteractionHandler(client, db, config, { wallet, blackjack, hilo, lottery });
 registerActivityHandler(client, wallet, config);
 let lotteryScheduler: ReturnType<typeof setInterval> | undefined;
 let blackjackScheduler: ReturnType<typeof setInterval> | undefined;
@@ -30,10 +30,6 @@ client.once("clientReady", async () => {
   console.log(`Logged in as ${client.user?.tag}`);
   console.log(
     `Activity rewards: ${config.MESSAGE_REWARD_AMOUNT} ${config.CURRENCY_NAME} per message (${config.MESSAGE_REWARD_COOLDOWN_MS / 1000}s cooldown)`,
-  );
-
-  await Promise.allSettled(
-    [...client.guilds.cache.values()].map((guild) => guild.channels.fetch()),
   );
 
   lotteryScheduler = startLotteryScheduler(client, lottery, config);

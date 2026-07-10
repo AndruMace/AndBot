@@ -108,7 +108,10 @@ export const wallets = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [uniqueIndex("wallets_guild_user_idx").on(table.guildId, table.userId)],
+  (table) => [
+    uniqueIndex("wallets_guild_user_idx").on(table.guildId, table.userId),
+    index("wallets_guild_balance_idx").on(table.guildId, table.balance.desc()),
+  ],
 );
 
 export const transactions = pgTable(
@@ -187,6 +190,7 @@ export const blackjackSessions = pgTable(
       table.userId,
       table.status,
     ),
+    index("blackjack_sessions_status_expires_idx").on(table.status, table.expiresAt),
   ],
 );
 
@@ -213,6 +217,7 @@ export const minesSessions = pgTable(
       table.userId,
       table.status,
     ),
+    index("mines_sessions_status_expires_idx").on(table.status, table.expiresAt),
   ],
 );
 
@@ -239,6 +244,7 @@ export const hiloSessions = pgTable(
       table.userId,
       table.status,
     ),
+    index("hilo_sessions_status_expires_idx").on(table.status, table.expiresAt),
   ],
 );
 

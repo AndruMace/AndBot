@@ -1,12 +1,12 @@
 import type { Client, Interaction } from "discord.js";
 import type { Database } from "../db/client";
 import type { Config } from "../config";
-import { createWalletService } from "../services/wallet";
+import type { WalletService } from "../services/wallet";
 import { createClaimsService } from "../services/claims";
-import { createBlackjackSessionService } from "../services/blackjack/session";
+import type { BlackjackSessionService } from "../services/blackjack/session";
 import { createMinesSessionService } from "../services/casino/mines/session";
-import { createHiloSessionService } from "../services/casino/hilo/session";
-import { createLotteryService } from "../services/lottery/rounds";
+import type { HiloSessionService } from "../services/casino/hilo/session";
+import type { LotteryService } from "../services/lottery/rounds";
 import { createSlotsJackpotService } from "../services/casino/slotsJackpot";
 import { createTicketService } from "../services/tickets/tickets";
 import { handleBalance, handleDaily, handleWeekly, handlePay } from "../commands/economy";
@@ -80,13 +80,22 @@ import { PublicGameMessageError } from "../commands/casino/publicMessage";
 import { ActiveCasinoSessionError } from "../services/casino/activeSession";
 import type { RpsChoice } from "../services/pvp/challenges";
 
-export function registerInteractionHandler(client: Client, db: Database, config: Config) {
-  const wallet = createWalletService(db, config);
+export type InteractionHandlerServices = {
+  wallet: WalletService;
+  blackjack: BlackjackSessionService;
+  hilo: HiloSessionService;
+  lottery: LotteryService;
+};
+
+export function registerInteractionHandler(
+  client: Client,
+  db: Database,
+  config: Config,
+  services: InteractionHandlerServices,
+) {
+  const { wallet, blackjack, hilo, lottery } = services;
   const claims = createClaimsService(wallet, config);
-  const blackjack = createBlackjackSessionService(db, wallet, config);
   const mines = createMinesSessionService(db, wallet, config);
-  const hilo = createHiloSessionService(db, wallet, config);
-  const lottery = createLotteryService(db, wallet, config);
   const slotsJackpot = createSlotsJackpotService(db);
   const tickets = createTicketService(db, config);
 

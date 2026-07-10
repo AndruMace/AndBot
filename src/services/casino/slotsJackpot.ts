@@ -18,6 +18,14 @@ export class SlotsJackpotService {
   constructor(private db: Database) {}
 
   async getJackpot(guildId: string): Promise<SlotsJackpot> {
+    const [existing] = await this.db
+      .select()
+      .from(slotsJackpots)
+      .where(eq(slotsJackpots.guildId, guildId))
+      .limit(1);
+
+    if (existing) return existing;
+
     return this.db.transaction(async (tx) => this.getOrCreateRow(tx, guildId));
   }
 

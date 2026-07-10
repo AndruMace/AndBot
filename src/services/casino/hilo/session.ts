@@ -274,7 +274,7 @@ export class HiloSessionService {
     });
   }
 
-  async expireSession(session: HiloSession): Promise<boolean> {
+  async expireSession(session: Pick<HiloSession, "id">): Promise<boolean> {
     return this.db.transaction(async (tx) => this.expireSessionInTx(tx, session));
   }
 
@@ -284,7 +284,11 @@ export class HiloSessionService {
 
   async reconcileDuplicateActiveSessions(): Promise<number> {
     const rows = await this.db
-      .select()
+      .select({
+        id: hiloSessions.id,
+        guildId: hiloSessions.guildId,
+        userId: hiloSessions.userId,
+      })
       .from(hiloSessions)
       .where(eq(hiloSessions.status, "active"))
       .orderBy(desc(hiloSessions.createdAt));
@@ -306,7 +310,7 @@ export class HiloSessionService {
 
   async sweepExpiredSessions(limit = 50): Promise<number> {
     const stale = await this.db
-      .select()
+      .select({ id: hiloSessions.id })
       .from(hiloSessions)
       .where(
         and(
@@ -368,7 +372,10 @@ export class HiloSessionService {
     return session;
   }
 
-  private async expireSessionInTx(tx: DbTransaction, session: HiloSession): Promise<boolean> {
+  private async expireSessionInTx(
+    tx: DbTransaction,
+    session: Pick<HiloSession, "id">,
+  ): Promise<boolean> {
     const [locked] = await tx
       .select()
       .from(hiloSessions)
