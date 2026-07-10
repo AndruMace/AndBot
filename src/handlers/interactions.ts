@@ -48,6 +48,7 @@ import {
   handleCasinoMinesConfig,
   handleCasinoMinesReveal,
   handleCasinoMinesCashout,
+  handleCasinoForfeitActive,
   handleCasinoLotteryPick,
   handleCasinoLotteryBuy,
   handleCasinoLotteryStatus,
@@ -76,6 +77,7 @@ import type { CoinSide } from "../services/pvp/challenges";
 import { parseButtonId } from "../utils/buttons";
 import { replyInteractionError, isInteractionAlreadyAcknowledged } from "../utils/interactionError";
 import { PublicGameMessageError } from "../commands/casino/publicMessage";
+import { ActiveCasinoSessionError } from "../services/casino/activeSession";
 import type { RpsChoice } from "../services/pvp/challenges";
 
 export function registerInteractionHandler(client: Client, db: Database, config: Config) {
@@ -131,7 +133,7 @@ export function registerInteractionHandler(client: Client, db: Database, config:
             await handleCoinflip(interaction, wallet, config);
             break;
           case "blackjack":
-            await handleBlackjack(interaction, wallet, blackjack, config);
+            await handleBlackjack(interaction, wallet, blackjack, hilo, mines, config);
             break;
           case "rps":
             if (interaction.options.getSubcommand() === "challenge") {
@@ -347,6 +349,23 @@ export function registerInteractionHandler(client: Client, db: Database, config:
             return;
           }
 
+          if (action === "ff" && rest.length >= 2) {
+            await handleCasinoForfeitActive(
+              interaction,
+              sub!,
+              rest[0]!,
+              rest[1]!,
+              rest[2],
+              wallet,
+              blackjack,
+              slotsJackpot,
+              hilo,
+              mines,
+              config,
+            );
+            return;
+          }
+
           if (action === "bet" && isCasinoGame(sub!) && rest[0]) {
             await handleCasinoWagerBet(
               interaction,
@@ -356,6 +375,7 @@ export function registerInteractionHandler(client: Client, db: Database, config:
               blackjack,
               slotsJackpot,
               hilo,
+              mines,
               config,
             );
             return;
@@ -373,6 +393,7 @@ export function registerInteractionHandler(client: Client, db: Database, config:
                 blackjack,
                 slotsJackpot,
                 hilo,
+                mines,
                 config,
               );
             }
@@ -391,6 +412,8 @@ export function registerInteractionHandler(client: Client, db: Database, config:
                 rest[1],
                 wallet,
                 blackjack,
+                hilo,
+                mines,
                 config,
               );
               return;
@@ -449,6 +472,8 @@ export function registerInteractionHandler(client: Client, db: Database, config:
                 rest[1]!,
                 rest[2]!,
                 mines,
+                blackjack,
+                hilo,
                 config,
               );
               return;
@@ -573,6 +598,7 @@ export function registerInteractionHandler(client: Client, db: Database, config:
               blackjack,
               slotsJackpot,
               hilo,
+              mines,
               config,
             );
             return;
@@ -585,6 +611,7 @@ export function registerInteractionHandler(client: Client, db: Database, config:
               blackjack,
               slotsJackpot,
               hilo,
+              mines,
               config,
             );
             return;
@@ -595,6 +622,8 @@ export function registerInteractionHandler(client: Client, db: Database, config:
               casinoParts[2],
               wallet,
               blackjack,
+              hilo,
+              mines,
               config,
             );
             return;
@@ -612,6 +641,15 @@ export function registerInteractionHandler(client: Client, db: Database, config:
       }
     } catch (err) {
       if (isInteractionAlreadyAcknowledged(err)) {
+        return;
+      }
+      if (err instanceof ActiveCasinoSessionError) {
+        await replyInteractionError(
+          interaction,
+          err.pending
+            ? `You have an active ${err.active.label} game. Use the forfeit button to continue.`
+            : `You have an active ${err.active.label} game. Forfeit your wager to continue.`,
+        );
         return;
       }
       if (err instanceof PublicGameMessageError) {

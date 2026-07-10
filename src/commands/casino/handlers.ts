@@ -35,9 +35,6 @@ import { ephemeralOptions } from "../../utils/discord";
 import { formatDuration } from "../../utils/time";
 import { formatHiLoCard, HI_LO_DECK_CLEAR_MESSAGE, type HiLoChoice } from "../../services/casino/hilo";
 import {
-  MINES_COLUMNS,
-  MINES_ROWS,
-  gemMultiplier,
   type MinesCount,
 } from "../../services/casino/mines/engine";
 import type { MinesSession } from "../../db/schema";
@@ -61,8 +58,10 @@ import {
   casinoMenuRows,
   casinoPostGameComponents,
   casinoStartOwnGameComponents,
+  casinoForfeitActiveSessionComponents,
 } from "./components";
 import { buildHiLoEmbed, hiloComponentsForSession } from "./hiloUi";
+import { buildMinesEmbed, buildMinesComponents } from "./minesUi";
 import {
   executeCasinoGame,
   executeKenoWithPicks,
@@ -78,8 +77,16 @@ import {
 import { generateQuickPick } from "../../services/casino/keno";
 import { type RouletteBet } from "../../services/casino/roulette";
 import { runCoinflipAnimation, runLuckyAnimation, runKenoAnimation } from "./presentations";
-import { replayBlackjackOnMessage } from "../house";
+import { replayBlackjackOnMessage, runBlackjackWithWager } from "../house";
 import { type CasinoReplayOptions } from "./replay";
+import {
+  ActiveCasinoSessionError,
+  assertNoActiveCasinoSession,
+  decodePendingStart,
+  forfeitCasinoSession,
+  parseActiveSessionKindCode,
+} from "../../services/casino/activeSession";
+import { resumePendingCasinoStart } from "./forfeitHandlers";
 import {
   buildGameHeader,
   buildLotteryPublicDescription,
@@ -107,76 +114,41 @@ async function replyNotYourCasinoGame(
   });
 }
 
-function buildMinesEmbed(
-  session: MinesSession,
-  config: Config,
-  footer?: string,
-  userId?: string,
-): EmbedBuilder {
-  const mult = gemMultiplier(session.gemsFound);
-  const potential = Math.floor(session.wager * mult);
+async function replyActiveCasinoSessionBlocked(
+  interaction: ButtonInteraction | ModalSubmitInteraction,
+  err: ActiveCasinoSessionError,
+): Promise<void> {
+  const pending = err.pending;
+  const pendingLabel =
+    pending?.kind === "wager"
+      ? getCasinoGameLabel(pending.game)
+      : pending?.kind === "blackjack"
+        ? "Blackjack"
+        : pending?.kind === "mines"
+          ? "Mines"
+          : pending?.kind === "lucky"
+            ? "Lucky #"
+            : pending?.kind === "keno"
+              ? "Keno"
+              : pending?.kind === "replay"
+                ? getCasinoGameLabel(pending.replay.game)
+                : null;
 
-  let description = "";
-  if (userId) {
-    description =
-      buildGameHeader(userId, "Mines", session.wager, config) +
-      "\n\n";
+  const content = pendingLabel
+    ? `You have an active **${err.active.label}** game. Forfeit that wager and start **${pendingLabel}**?`
+    : `You have an active **${err.active.label}** game. Forfeit your wager to continue?`;
+
+  const payload = {
+    content,
+    embeds: [] as EmbedBuilder[],
+    components: casinoForfeitActiveSessionComponents(interaction.user.id, err.active, pending),
+  };
+
+  if (interaction.deferred || interaction.replied) {
+    await interaction.editReply(payload);
+  } else {
+    await interaction.reply(ephemeralOptions(payload));
   }
-
-  description +=
-    `Wager: **${formatCurrency(session.wager, config)}** · Mines: **${session.mineCount}**\n` +
-    `Gems found: **${session.gemsFound}** · Multiplier: **${mult.toFixed(2)}x**\n` +
-    `Cash out value: **${formatCurrency(potential, config)}**` +
-    (footer ? `\n\n${footer}` : "");
-
-  return new EmbedBuilder()
-    .setColor(0xe67e22)
-    .setTitle("Mines")
-    .setDescription(description);
-}
-
-function buildMinesComponents(session: MinesSession): ActionRowBuilder<ButtonBuilder>[] {
-  const rows: ActionRowBuilder<ButtonBuilder>[] = [];
-  const revealed = new Set(session.revealed);
-
-  for (let row = 0; row < MINES_ROWS; row++) {
-    const buttonRow = new ActionRowBuilder<ButtonBuilder>();
-    for (let col = 0; col < MINES_COLUMNS; col++) {
-      const index = row * MINES_COLUMNS + col;
-      if (revealed.has(index)) {
-        const isMine = session.minePositions.includes(index);
-        buttonRow.addComponents(
-          new ButtonBuilder()
-            .setCustomId(buildButtonId("casino", "mn", "done", session.id, String(index)))
-            .setLabel(isMine ? "💥" : "💎")
-            .setStyle(isMine ? ButtonStyle.Danger : ButtonStyle.Success)
-            .setDisabled(true),
-        );
-      } else {
-        buttonRow.addComponents(
-          new ButtonBuilder()
-            .setCustomId(buildButtonId("casino", "mn", "rev", session.id, String(index)))
-            .setLabel("⬜")
-            .setStyle(ButtonStyle.Secondary),
-        );
-      }
-    }
-    rows.push(buttonRow);
-  }
-
-  if (session.status === "active" && session.gemsFound > 0) {
-    rows.push(
-      new ActionRowBuilder<ButtonBuilder>().addComponents(
-        new ButtonBuilder()
-          .setCustomId(buildButtonId("casino", "mn", "out", session.id))
-          .setLabel("Cash Out")
-          .setStyle(ButtonStyle.Success)
-          .setEmoji("💰"),
-      ),
-    );
-  }
-
-  return rows;
 }
 
 async function replyCasinoError(
@@ -184,6 +156,11 @@ async function replyCasinoError(
   err: unknown,
 ): Promise<boolean> {
   if (isInteractionAlreadyAcknowledged(err)) {
+    return true;
+  }
+
+  if (err instanceof ActiveCasinoSessionError) {
+    await replyActiveCasinoSessionBlocked(interaction, err);
     return true;
   }
 
@@ -548,6 +525,10 @@ export async function handleCasinoPlayAgain(
   try {
     await casinoLock.run(guildId, interaction.user.id, async () => {
       const amount = parseWagerAmount(String(replay.amount), config);
+      await assertNoActiveCasinoSession(guildId, interaction.user.id, blackjack, hilo, mines, {
+        kind: "replay",
+        replay,
+      });
       await disableButtonComponents(interaction);
       await recordCasinoWager(wallet, guildId, interaction.user.id, amount);
 
@@ -716,6 +697,7 @@ export async function handleCasinoWagerBet(
   blackjack: BlackjackSessionService,
   slotsJackpot: SlotsJackpotService,
   hilo: HiloSessionService,
+  mines: MinesSessionService,
   config: Config,
 ) {
   const guildId = assertGuild(interaction);
@@ -748,7 +730,7 @@ export async function handleCasinoWagerBet(
         return;
       }
 
-      await executeCasinoGame(interaction, game, amount, wallet, blackjack, slotsJackpot, hilo, config);
+      await executeCasinoGame(interaction, game, amount, wallet, blackjack, slotsJackpot, hilo, mines, config);
     });
   } catch (err) {
     if (await replyCasinoError(interaction, err)) return;
@@ -763,6 +745,7 @@ export async function handleCasinoCustomAmountModal(
   blackjack: BlackjackSessionService,
   slotsJackpot: SlotsJackpotService,
   hilo: HiloSessionService,
+  mines: MinesSessionService,
   config: Config,
 ) {
   const guildId = assertGuild(interaction);
@@ -795,7 +778,7 @@ export async function handleCasinoCustomAmountModal(
         return;
       }
 
-      await executeCasinoGame(interaction, game, amount, wallet, blackjack, slotsJackpot, hilo, config);
+      await executeCasinoGame(interaction, game, amount, wallet, blackjack, slotsJackpot, hilo, mines, config);
     });
   } catch (err) {
     if (await replyCasinoError(interaction, err)) return;
@@ -811,6 +794,7 @@ export async function handleCasinoLuckyPick(
   blackjack: BlackjackSessionService,
   slotsJackpot: SlotsJackpotService,
   hilo: HiloSessionService,
+  mines: MinesSessionService,
   config: Config,
 ) {
   const guildId = assertGuild(interaction);
@@ -826,7 +810,12 @@ export async function handleCasinoLuckyPick(
         pick = parseLuckyPick(pickToken);
       }
 
-      await executeLuckyWithPick(interaction, amount, pick, wallet, blackjack, slotsJackpot, hilo, config);
+      await assertNoActiveCasinoSession(guildId, interaction.user.id, blackjack, hilo, mines, {
+        kind: "lucky",
+        amount,
+        pick,
+      });
+      await executeLuckyWithPick(interaction, amount, pick, wallet, blackjack, slotsJackpot, hilo, mines, config);
     });
   } catch (err) {
     if (await replyCasinoError(interaction, err)) return;
@@ -841,6 +830,7 @@ export async function handleCasinoLuckyCustomModal(
   blackjack: BlackjackSessionService,
   slotsJackpot: SlotsJackpotService,
   hilo: HiloSessionService,
+  mines: MinesSessionService,
   config: Config,
 ) {
   const guildId = assertGuild(interaction);
@@ -849,7 +839,12 @@ export async function handleCasinoLuckyCustomModal(
     await casinoLock.run(guildId, interaction.user.id, async () => {
       const amount = parseWagerAmount(amountStr, config);
       const pick = parseLuckyPick(interaction.fields.getTextInputValue("number"));
-      await executeLuckyWithPick(interaction, amount, pick, wallet, blackjack, slotsJackpot, hilo, config);
+      await assertNoActiveCasinoSession(guildId, interaction.user.id, blackjack, hilo, mines, {
+        kind: "lucky",
+        amount,
+        pick,
+      });
+      await executeLuckyWithPick(interaction, amount, pick, wallet, blackjack, slotsJackpot, hilo, mines, config);
     });
   } catch (err) {
     if (await replyCasinoError(interaction, err)) return;
@@ -872,6 +867,8 @@ export async function handleCasinoKenoQuickPick(
   amountStr: string,
   wallet: WalletService,
   blackjack: BlackjackSessionService,
+  hilo: HiloSessionService,
+  mines: MinesSessionService,
   config: Config,
 ) {
   const guildId = assertGuild(interaction);
@@ -881,7 +878,12 @@ export async function handleCasinoKenoQuickPick(
       const amount = parseWagerAmount(amountStr, config);
       const spotCount = Number.parseInt(spotCountStr, 10);
       const picks = generateQuickPick(spotCount);
-      await executeKenoWithPicks(interaction, amount, picks, wallet, blackjack, config);
+      await assertNoActiveCasinoSession(guildId, interaction.user.id, blackjack, hilo, mines, {
+        kind: "keno",
+        amount,
+        picks,
+      });
+      await executeKenoWithPicks(interaction, amount, picks, wallet, blackjack, hilo, mines, config);
     });
   } catch (err) {
     if (await replyCasinoError(interaction, err)) return;
@@ -903,6 +905,8 @@ export async function handleCasinoKenoCustomModal(
   amountStr: string,
   wallet: WalletService,
   blackjack: BlackjackSessionService,
+  hilo: HiloSessionService,
+  mines: MinesSessionService,
   config: Config,
 ) {
   const guildId = assertGuild(interaction);
@@ -911,7 +915,12 @@ export async function handleCasinoKenoCustomModal(
     await casinoLock.run(guildId, interaction.user.id, async () => {
       const amount = parseWagerAmount(amountStr, config);
       const picks = parseKenoPicks(interaction.fields.getTextInputValue("picks"));
-      await executeKenoWithPicks(interaction, amount, picks, wallet, blackjack, config);
+      await assertNoActiveCasinoSession(guildId, interaction.user.id, blackjack, hilo, mines, {
+        kind: "keno",
+        amount,
+        picks,
+      });
+      await executeKenoWithPicks(interaction, amount, picks, wallet, blackjack, hilo, mines, config);
     });
   } catch (err) {
     if (await replyCasinoError(interaction, err)) return;
@@ -1138,6 +1147,8 @@ export async function handleCasinoMinesConfig(
   ownerId: string,
   amountStr: string,
   mines: MinesSessionService,
+  blackjack: BlackjackSessionService,
+  hilo: HiloSessionService,
   config: Config,
 ) {
   const guildId = assertGuild(interaction);
@@ -1159,6 +1170,12 @@ export async function handleCasinoMinesConfig(
       if (![3, 5, 8].includes(mineCount)) {
         throw new Error("Invalid mine count.");
       }
+
+      await assertNoActiveCasinoSession(guildId, interaction.user.id, blackjack, hilo, mines, {
+        kind: "mines",
+        amount,
+        minesCount: mineCount,
+      });
 
       let sessionId = "";
 
@@ -1306,6 +1323,96 @@ export async function handleCasinoMinesCashout(
           }),
         ],
       });
+    });
+  } catch (err) {
+    if (await replyCasinoError(interaction, err)) return;
+    throw err;
+  }
+}
+
+export async function handleCasinoForfeitActive(
+  interaction: ButtonInteraction,
+  ownerId: string,
+  kindCode: string,
+  sessionId: string,
+  pendingEncoded: string | undefined,
+  wallet: WalletService,
+  blackjack: BlackjackSessionService,
+  slotsJackpot: SlotsJackpotService,
+  hilo: HiloSessionService,
+  mines: MinesSessionService,
+  config: Config,
+) {
+  const guildId = assertGuild(interaction);
+
+  if (interaction.user.id !== ownerId) {
+    await interaction.reply({
+      content: "This isn't your forfeit prompt.",
+      ephemeral: true,
+    });
+    return;
+  }
+
+  const kind = parseActiveSessionKindCode(kindCode);
+  if (!kind) {
+    await interaction.reply({ content: "Invalid forfeit action.", ephemeral: true });
+    return;
+  }
+
+  const pending = pendingEncoded ? decodePendingStart(pendingEncoded) : null;
+  if (pendingEncoded && !pending) {
+    await interaction.reply({ content: "Invalid forfeit action.", ephemeral: true });
+    return;
+  }
+
+  try {
+    await casinoLock.run(guildId, interaction.user.id, async () => {
+      const forfeited = await forfeitCasinoSession(
+        kind,
+        sessionId,
+        blackjack,
+        hilo,
+        mines,
+      );
+
+      if (!forfeited) {
+        const payload = {
+          content: "That game is no longer active.",
+          embeds: [] as EmbedBuilder[],
+          components: [] as [],
+        };
+        if (interaction.deferred || interaction.replied) {
+          await interaction.editReply(payload);
+        } else {
+          await interaction.reply(ephemeralOptions(payload));
+        }
+        return;
+      }
+
+      if (!pending) {
+        const payload = {
+          content: "Game forfeited. You can start a new one from the casino menu.",
+          embeds: [] as EmbedBuilder[],
+          components: [] as [],
+        };
+        if (interaction.deferred || interaction.replied) {
+          await interaction.editReply(payload);
+        } else {
+          await interaction.reply(ephemeralOptions(payload));
+        }
+        return;
+      }
+
+      await resumePendingCasinoStart(
+        interaction,
+        pending,
+        wallet,
+        blackjack,
+        slotsJackpot,
+        hilo,
+        mines,
+        config,
+      );
     });
   } catch (err) {
     if (await replyCasinoError(interaction, err)) return;

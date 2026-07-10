@@ -15,6 +15,8 @@ import {
 } from "../../services/casino/slots";
 import type { SlotsJackpotService } from "../../services/casino/slotsJackpot";
 import type { HiloSessionService } from "../../services/casino/hilo/session";
+import type { MinesSessionService } from "../../services/casino/mines/session";
+import { assertNoActiveCasinoSession } from "../../services/casino/activeSession";
 import { startHiLoPublicSession } from "./hiloUi";
 import { rollLuckyNumber } from "../../services/casino/lucky";
 import {
@@ -337,11 +339,18 @@ export async function executeCasinoGame(
   blackjack: BlackjackSessionService,
   slotsJackpot: SlotsJackpotService,
   hilo: HiloSessionService,
+  mines: MinesSessionService,
   config: Config,
   luckyPick?: number,
 ) {
   const guildId = interaction.guildId!;
   const userId = interaction.user.id;
+
+  await assertNoActiveCasinoSession(guildId, userId, blackjack, hilo, mines, {
+    kind: "wager",
+    game,
+    amount,
+  });
 
   await recordCasinoWager(wallet, guildId, userId, amount);
 
@@ -377,6 +386,8 @@ export async function executeCasinoGame(
     case "blackjack":
       await runBlackjackWithWager(interaction, wallet, blackjack, config, amount, {
         publishMode: "channel",
+        hilo,
+        mines,
       });
       return;
 
@@ -508,10 +519,19 @@ export async function executeKenoWithPicks(
   picks: number[],
   wallet: WalletService,
   blackjack: BlackjackSessionService,
+  hilo: HiloSessionService,
+  mines: MinesSessionService,
   config: Config,
 ) {
   const guildId = interaction.guildId!;
   const userId = interaction.user.id;
+
+  await assertNoActiveCasinoSession(guildId, userId, blackjack, hilo, mines, {
+    kind: "keno",
+    amount,
+    picks,
+  });
+
   const ctx = presentationContext(userId, "keno", amount, config);
 
   await recordCasinoWager(wallet, guildId, userId, amount);
@@ -548,9 +568,10 @@ export async function executeLuckyWithPick(
   blackjack: BlackjackSessionService,
   slotsJackpot: SlotsJackpotService,
   hilo: HiloSessionService,
+  mines: MinesSessionService,
   config: Config,
 ) {
-  await executeCasinoGame(interaction, "lucky", amount, wallet, blackjack, slotsJackpot, hilo, config, pick);
+  await executeCasinoGame(interaction, "lucky", amount, wallet, blackjack, slotsJackpot, hilo, mines, config, pick);
 }
 
 export function randomLuckyPick(): number {

@@ -14,6 +14,7 @@ import { InsufficientFundsError } from "../../services/wallet";
 import { BlackjackSessionError } from "../../services/blackjack/session";
 import { MinesSessionError } from "../../services/casino/mines/session";
 import { HiloSessionError } from "../../services/casino/hilo/session";
+import { ActiveCasinoSessionError } from "../../services/casino/activeSession";
 
 export type PublicMessageEdit = (payload: MessageEditOptions) => Promise<unknown>;
 
@@ -93,6 +94,7 @@ export type AfterPublicSend = (message: Message) => Promise<void>;
 
 function isKnownCasinoSetupError(err: unknown): boolean {
   return (
+    err instanceof ActiveCasinoSessionError ||
     err instanceof HiloSessionError ||
     err instanceof InsufficientFundsError ||
     err instanceof BlackjackSessionError ||

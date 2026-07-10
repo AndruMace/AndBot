@@ -15,7 +15,13 @@ import { type CoinSide } from "../services/coinflip";
 import { runCoinflipAnimation } from "./casino/presentations";
 import { casinoLock, CasinoBusyError } from "../services/casino/lock";
 import { postPublicGameMessage, buildGameHeader, prefixDescription, type SetupInteraction, rollbackCreatedSession } from "./casino/publicMessage";
-import { casinoPostGameComponents, casinoStartOwnGameComponents } from "./casino/components";
+import { casinoPostGameComponents, casinoStartOwnGameComponents, casinoForfeitActiveSessionComponents } from "./casino/components";
+import type { HiloSessionService } from "../services/casino/hilo/session";
+import type { MinesSessionService } from "../services/casino/mines/session";
+import {
+  ActiveCasinoSessionError,
+  assertNoActiveCasinoSession,
+} from "../services/casino/activeSession";
 import type { CasinoReplayOptions } from "./casino/replay";
 import { InsufficientFundsError } from "../services/wallet";
 import { assertGuild } from "../utils/permissions";
@@ -183,7 +189,11 @@ export async function runBlackjackWithWager(
   blackjack: BlackjackSessionService,
   config: Config,
   amount: number,
-  options?: { publishMode?: "interaction" | "channel" },
+  options?: {
+    publishMode?: "interaction" | "channel";
+    hilo?: HiloSessionService;
+    mines?: MinesSessionService;
+  },
 ) {
   const guildId = assertGuild(interaction);
 
@@ -205,7 +215,11 @@ async function runBlackjackWithWagerInner(
   blackjack: BlackjackSessionService,
   config: Config,
   amount: number,
-  options?: { publishMode?: "interaction" | "channel" },
+  options?: {
+    publishMode?: "interaction" | "channel";
+    hilo?: HiloSessionService;
+    mines?: MinesSessionService;
+  },
 ) {
   const guildId = assertGuild(interaction);
   const channelId = interaction.channelId;
@@ -219,6 +233,21 @@ async function runBlackjackWithWagerInner(
   const balance = await wallet.getBalance(guildId, interaction.user.id);
   if (balance < amount) {
     throw new InsufficientFundsError();
+  }
+
+  if (options?.hilo && options?.mines) {
+    await assertNoActiveCasinoSession(
+      guildId,
+      interaction.user.id,
+      blackjack,
+      options.hilo,
+      options.mines,
+      {
+        kind: "blackjack",
+        amount,
+        publishMode: options.publishMode === "channel" ? "channel" : "interaction",
+      },
+    );
   }
 
   if (isChannelPublish) {
@@ -397,13 +426,35 @@ export async function handleBlackjack(
   interaction: ChatInputCommandInteraction,
   wallet: WalletService,
   blackjack: BlackjackSessionService,
+  hilo: HiloSessionService,
+  mines: MinesSessionService,
   config: Config,
 ) {
   const amount = interaction.options.getInteger("amount", true);
 
   try {
-    await runBlackjackWithWager(interaction, wallet, blackjack, config, amount);
+    await runBlackjackWithWager(interaction, wallet, blackjack, config, amount, {
+      hilo,
+      mines,
+    });
   } catch (err) {
+    if (err instanceof ActiveCasinoSessionError) {
+      const pending = err.pending;
+      const pendingLabel =
+        pending?.kind === "blackjack"
+          ? "Blackjack"
+          : pending?.kind === "wager"
+            ? "a new game"
+            : null;
+      await interaction.reply({
+        content: pendingLabel
+          ? `You have an active **${err.active.label}** game. Forfeit that wager and start **Blackjack**?`
+          : `You have an active **${err.active.label}** game. Forfeit your wager to continue?`,
+        components: casinoForfeitActiveSessionComponents(interaction.user.id, err.active, pending),
+        ephemeral: true,
+      });
+      return;
+    }
     if (
       err instanceof BetValidationError ||
       err instanceof InsufficientFundsError ||

@@ -6,6 +6,10 @@ import type { WalletService } from "../../wallet";
 import { InsufficientFundsError } from "../../wallet";
 import { addMinutes, isExpired } from "../../../utils/time";
 import {
+  ActiveCasinoSessionError,
+  type ActiveCasinoSessionInfo,
+} from "../activeSession";
+import {
   canGuess,
   calculateHiLoPayout,
   cardRankValue,
@@ -16,6 +20,15 @@ import {
   resolveHiLoGuess,
   type HiLoChoice,
 } from "../hilo";
+
+function toActiveHiloSession(session: HiloSession): ActiveCasinoSessionInfo {
+  return {
+    kind: "hilo",
+    sessionId: session.id,
+    label: "Hi-Lo",
+    wager: session.wager,
+  };
+}
 
 export class HiloSessionError extends Error {
   constructor(message: string) {
@@ -101,7 +114,7 @@ export class HiloSessionService {
           if (isExpired(existing.expiresAt)) {
             await this.expireSessionInTx(tx, existing);
           } else {
-            throw new HiloSessionError("You already have an active Hi-Lo game.");
+            throw new ActiveCasinoSessionError(toActiveHiloSession(existing));
           }
         }
 
@@ -130,8 +143,18 @@ export class HiloSessionService {
       if (err instanceof HiloSessionError || err instanceof InsufficientFundsError) {
         throw err;
       }
+      if (err instanceof ActiveCasinoSessionError) throw err;
       if (isUniqueViolation(err)) {
-        throw new HiloSessionError("You already have an active Hi-Lo game.");
+        const active = await this.getActiveSession(guildId, userId);
+        if (active) {
+          throw new ActiveCasinoSessionError(toActiveHiloSession(active));
+        }
+        throw new ActiveCasinoSessionError({
+          kind: "hilo",
+          sessionId: "",
+          label: "Hi-Lo",
+          wager: 0,
+        });
       }
       throw err;
     }
@@ -238,6 +261,10 @@ export class HiloSessionService {
 
   async expireSession(session: HiloSession): Promise<boolean> {
     return this.db.transaction(async (tx) => this.expireSessionInTx(tx, session));
+  }
+
+  async forfeitSession(session: HiloSession): Promise<boolean> {
+    return this.db.transaction(async (tx) => this.forfeitSessionInTx(tx, session));
   }
 
   async reconcileDuplicateActiveSessions(): Promise<number> {
@@ -349,6 +376,24 @@ export class HiloSessionService {
     await tx
       .update(hiloSessions)
       .set({ status: "expired" })
+      .where(eq(hiloSessions.id, locked.id));
+
+    return true;
+  }
+
+  private async forfeitSessionInTx(tx: DbTransaction, session: HiloSession): Promise<boolean> {
+    const [locked] = await tx
+      .select()
+      .from(hiloSessions)
+      .where(and(eq(hiloSessions.id, session.id), eq(hiloSessions.status, "active")))
+      .for("update")
+      .limit(1);
+
+    if (!locked) return false;
+
+    await tx
+      .update(hiloSessions)
+      .set({ status: "busted" })
       .where(eq(hiloSessions.id, locked.id));
 
     return true;

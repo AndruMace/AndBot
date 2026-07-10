@@ -5,10 +5,23 @@ import type { Config } from "../../../config";
 import type { WalletService } from "../../wallet";
 import { addMinutes, isExpired } from "../../../utils/time";
 import {
+  ActiveCasinoSessionError,
+  type ActiveCasinoSessionInfo,
+} from "../activeSession";
+import {
   generateMinePositions,
   calculateMinesPayout,
   type MinesCount,
 } from "./engine";
+
+function toActiveMinesSession(session: MinesSession): ActiveCasinoSessionInfo {
+  return {
+    kind: "mines",
+    sessionId: session.id,
+    label: "Mines",
+    wager: session.wager,
+  };
+}
 
 export class MinesSessionError extends Error {
   constructor(message: string) {
@@ -64,7 +77,7 @@ export class MinesSessionService {
   ): Promise<MinesSession> {
     const existing = await this.getActiveSession(guildId, userId);
     if (existing) {
-      throw new MinesSessionError("You already have an active mines game.");
+      throw new ActiveCasinoSessionError(toActiveMinesSession(existing));
     }
 
     await this.wallet.debit(guildId, userId, wager, "mines_bet");
@@ -172,6 +185,23 @@ export class MinesSessionService {
       .update(minesSessions)
       .set({ status: "expired" })
       .where(eq(minesSessions.id, session.id));
+  }
+
+  async forfeitSession(session: MinesSession): Promise<boolean> {
+    const [locked] = await this.db
+      .select()
+      .from(minesSessions)
+      .where(and(eq(minesSessions.id, session.id), eq(minesSessions.status, "active")))
+      .limit(1);
+
+    if (!locked) return false;
+
+    await this.db
+      .update(minesSessions)
+      .set({ status: "busted" })
+      .where(eq(minesSessions.id, locked.id));
+
+    return true;
   }
 }
 

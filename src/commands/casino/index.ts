@@ -25,6 +25,7 @@ export {
   handleCasinoMinesConfig,
   handleCasinoMinesReveal,
   handleCasinoMinesCashout,
+  handleCasinoForfeitActive,
   handleCasinoLotteryPick,
   handleCasinoLotteryBuy,
   handleCasinoLotteryStatus,

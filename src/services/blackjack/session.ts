@@ -5,6 +5,10 @@ import type { Config } from "../../config";
 import type { WalletService } from "../wallet";
 import { addMinutes, isExpired } from "../../utils/time";
 import {
+  ActiveCasinoSessionError,
+  type ActiveCasinoSessionInfo,
+} from "../casino/activeSession";
+import {
   createDeck,
   shuffleDeck,
   dealInitial,
@@ -16,6 +20,15 @@ import {
   type Card,
   type GameOutcome,
 } from "./engine";
+
+function toActiveBlackjackSession(session: BlackjackSession): ActiveCasinoSessionInfo {
+  return {
+    kind: "blackjack",
+    sessionId: session.id,
+    label: "Blackjack",
+    wager: effectiveBlackjackWager(session),
+  };
+}
 
 export class BlackjackSessionError extends Error {
   constructor(message: string) {
@@ -85,7 +98,7 @@ export class BlackjackSessionService {
           if (isExpired(existing.expiresAt)) {
             await this.expireSessionInTx(tx, existing);
           } else {
-            throw new BlackjackSessionError("You already have an active blackjack game.");
+            throw new ActiveCasinoSessionError(toActiveBlackjackSession(existing));
           }
         }
 
@@ -118,8 +131,18 @@ export class BlackjackSessionService {
         return session!;
       });
     } catch (err) {
+      if (err instanceof ActiveCasinoSessionError) throw err;
       if (isUniqueViolation(err)) {
-        throw new BlackjackSessionError("You already have an active blackjack game.");
+        const active = await this.getActiveSession(guildId, userId);
+        if (active) {
+          throw new ActiveCasinoSessionError(toActiveBlackjackSession(active));
+        }
+        throw new ActiveCasinoSessionError({
+          kind: "blackjack",
+          sessionId: "",
+          label: "Blackjack",
+          wager: 0,
+        });
       }
       throw err;
     }
@@ -234,6 +257,11 @@ export class BlackjackSessionService {
     return this.db.transaction(async (tx) => this.expireSessionInTx(tx, session));
   }
 
+  /** Close an active session without refunding the wager. */
+  async forfeitSession(session: BlackjackSession): Promise<boolean> {
+    return this.db.transaction(async (tx) => this.forfeitSessionInTx(tx, session));
+  }
+
   async reconcileDuplicateActiveSessions(): Promise<number> {
     const rows = await this.db
       .select()
@@ -344,6 +372,24 @@ export class BlackjackSessionService {
       undefined,
       tx,
     );
+
+    await tx
+      .update(blackjackSessions)
+      .set({ status: "expired" })
+      .where(eq(blackjackSessions.id, locked.id));
+
+    return true;
+  }
+
+  private async forfeitSessionInTx(tx: DbTransaction, session: BlackjackSession): Promise<boolean> {
+    const [locked] = await tx
+      .select()
+      .from(blackjackSessions)
+      .where(and(eq(blackjackSessions.id, session.id), eq(blackjackSessions.status, "active")))
+      .for("update")
+      .limit(1);
+
+    if (!locked) return false;
 
     await tx
       .update(blackjackSessions)

@@ -23,6 +23,12 @@ import {
 } from "./wagers";
 import { formatCurrency } from "../../utils/bets";
 import { EmbedBuilder } from "discord.js";
+import {
+  activeSessionKindCode,
+  encodePendingStart,
+  type ActiveCasinoSessionInfo,
+  type PendingCasinoStart,
+} from "../../services/casino/activeSession";
 
 export function casinoMenuEmbed(config: Config): EmbedBuilder {
   const fields = [
@@ -100,6 +106,42 @@ export function casinoStartOwnGameComponents(
   game: CasinoGame,
 ): ActionRowBuilder<ButtonBuilder>[] {
   return [casinoStartOwnGameRow(userId, game)];
+}
+
+export function casinoForfeitActiveSessionComponents(
+  userId: string,
+  active: ActiveCasinoSessionInfo,
+  pending?: PendingCasinoStart,
+): ActionRowBuilder<ButtonBuilder>[] {
+  const parts = [userId, activeSessionKindCode(active.kind), active.sessionId];
+  if (pending) {
+    parts.push(encodePendingStart(pending));
+  }
+
+  const pendingLabel =
+    pending?.kind === "wager"
+      ? CASINO_GAMES.find((g) => g.id === pending.game)?.label
+      : pending?.kind === "blackjack"
+        ? "Blackjack"
+        : pending?.kind === "mines"
+          ? "Mines"
+          : pending?.kind === "lucky"
+            ? "Lucky #"
+            : pending?.kind === "keno"
+              ? "Keno"
+              : pending?.kind === "replay"
+                ? CASINO_GAMES.find((g) => g.id === pending.replay.game)?.label
+                : undefined;
+
+  return [
+    new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setCustomId(buildButtonId("casino", "ff", ...parts))
+        .setLabel(pendingLabel ? `Forfeit & Play ${pendingLabel}` : "Forfeit Game")
+        .setStyle(ButtonStyle.Danger)
+        .setEmoji("🗑️"),
+    ),
+  ];
 }
 
 export function casinoPostGameRow(replay: CasinoReplayOptions): ActionRowBuilder<ButtonBuilder> {
