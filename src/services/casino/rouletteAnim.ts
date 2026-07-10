@@ -8,6 +8,8 @@ import {
 
 export const ROULETTE_MIN_SPIN_STEPS = 26;
 export const ROULETTE_MAX_SPIN_STEPS = 34;
+/** Pause on the landed pocket before revealing win/loss. */
+export const ROULETTE_FINAL_PAUSE_MS = 1000;
 
 const WHEEL_LEN = EUROPEAN_WHEEL_ORDER.length;
 

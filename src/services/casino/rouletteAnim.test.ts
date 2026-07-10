@@ -46,9 +46,14 @@ describe("rouletteAnim", () => {
     expect(frame).toContain("[🔴32]");
   });
 
-  test("final frame omits spinning text", () => {
+  test("landing frame omits spinning text", () => {
     const frame = renderRouletteFrame(0, "red", { spinning: false });
     expect(frame).not.toContain("Spinning");
+  });
+
+  test("spinning frame shows status", () => {
+    const frame = renderRouletteFrame(0, "red", { spinning: true });
+    expect(frame).toContain("*Spinning...*");
   });
 
   test("can omit bet line on result frame", () => {

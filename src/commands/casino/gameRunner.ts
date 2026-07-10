@@ -50,6 +50,7 @@ import {
 import {
   buildRouletteSpinIndices,
   renderRouletteFrame,
+  ROULETTE_FINAL_PAUSE_MS,
   rouletteDelayForStep,
   sleep as rouletteSleep,
 } from "../../services/casino/rouletteAnim";
@@ -235,14 +236,14 @@ export async function runRouletteAnimation(
   })();
 
   const indices = buildRouletteSpinIndices(result);
-  const spinFrames = indices.length - 1;
-  const totalDelays = Math.max(spinFrames - 1, 1);
+  const totalDelays = Math.max(indices.length - 1, 1);
 
-  for (let step = 0; step < spinFrames; step++) {
+  for (let step = 0; step < indices.length; step++) {
     if (step > 0) {
       await rouletteSleep(rouletteDelayForStep(step - 1, totalDelays));
     }
-    const body = renderRouletteFrame(indices[step]!, bet, { spinning: true });
+    const isLanding = step === indices.length - 1;
+    const body = renderRouletteFrame(indices[step]!, bet, { spinning: !isLanding });
     await edit({
       embeds: [
         new EmbedBuilder()
@@ -252,6 +253,8 @@ export async function runRouletteAnimation(
       ],
     });
   }
+
+  await rouletteSleep(ROULETTE_FINAL_PAUSE_MS);
 
   const balance = await settlement;
   const body =
