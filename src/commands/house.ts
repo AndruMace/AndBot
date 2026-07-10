@@ -13,6 +13,7 @@ import type { BlackjackSessionService } from "../services/blackjack/session";
 import { BlackjackSessionError } from "../services/blackjack/session";
 import { type CoinSide } from "../services/coinflip";
 import { runCoinflipAnimation } from "./casino/presentations";
+import { casinoLock, CasinoBusyError } from "../services/casino/lock";
 import { postPublicGameMessage, buildGameHeader, prefixDescription, type SetupInteraction, rollbackCreatedSession } from "./casino/publicMessage";
 import { casinoPostGameComponents, casinoStartOwnGameComponents } from "./casino/components";
 import type { CasinoReplayOptions } from "./casino/replay";
@@ -62,25 +63,27 @@ export async function handleCoinflip(
 
   try {
     validateBetAmount(amount, config);
-    await interaction.deferReply();
-    await runCoinflipAnimation(
-      (p) => interaction.editReply(p),
-      wallet,
-      guildId,
-      interaction.user.id,
-      amount,
-      side,
-      config,
-      {
-        isPublic: true,
-        userId: interaction.user.id,
-        gameLabel: "Coinflip",
-        wager: amount,
+    await casinoLock.run(guildId, interaction.user.id, async () => {
+      await interaction.deferReply();
+      await runCoinflipAnimation(
+        (p) => interaction.editReply(p),
+        wallet,
+        guildId,
+        interaction.user.id,
+        amount,
+        side,
         config,
-      },
-    );
+        {
+          isPublic: true,
+          userId: interaction.user.id,
+          gameLabel: "Coinflip",
+          wager: amount,
+          config,
+        },
+      );
+    });
   } catch (err) {
-    if (err instanceof BetValidationError || err instanceof InsufficientFundsError) {
+    if (err instanceof BetValidationError || err instanceof InsufficientFundsError || err instanceof CasinoBusyError) {
       if (interaction.deferred || interaction.replied) {
         await interaction.editReply({ content: err.message, embeds: [] });
       } else {
@@ -175,6 +178,28 @@ function buildBlackjackEmbed(
 }
 
 export async function runBlackjackWithWager(
+  interaction: ChatInputCommandInteraction | ModalSubmitInteraction | ButtonInteraction,
+  wallet: WalletService,
+  blackjack: BlackjackSessionService,
+  config: Config,
+  amount: number,
+  options?: { publishMode?: "interaction" | "channel" },
+) {
+  const guildId = assertGuild(interaction);
+
+  return casinoLock.run(guildId, interaction.user.id, async () => {
+    return runBlackjackWithWagerInner(
+      interaction,
+      wallet,
+      blackjack,
+      config,
+      amount,
+      options,
+    );
+  });
+}
+
+async function runBlackjackWithWagerInner(
   interaction: ChatInputCommandInteraction | ModalSubmitInteraction | ButtonInteraction,
   wallet: WalletService,
   blackjack: BlackjackSessionService,
@@ -382,7 +407,8 @@ export async function handleBlackjack(
     if (
       err instanceof BetValidationError ||
       err instanceof InsufficientFundsError ||
-      err instanceof BlackjackSessionError
+      err instanceof BlackjackSessionError ||
+      err instanceof CasinoBusyError
     ) {
       await interaction.reply({ content: err.message, ephemeral: true });
       return;
@@ -416,52 +442,54 @@ export async function handleBlackjackButton(
   }
 
   try {
-    let updated = session;
-    let finished = false;
+    await casinoLock.run(guildId, interaction.user.id, async () => {
+      let updated = session;
+      let finished = false;
 
-    if (action === "hit") {
-      const result = await blackjack.hitAction(session);
-      updated = result.session;
-      finished = result.finished;
-    } else if (action === "stand") {
-      updated = await blackjack.standAction(session);
-      finished = true;
-    } else {
-      const result = await blackjack.doubleAction(session);
-      updated = result.session;
-      finished = true;
-    }
+      if (action === "hit") {
+        const result = await blackjack.hitAction(session);
+        updated = result.session;
+        finished = result.finished;
+      } else if (action === "stand") {
+        updated = await blackjack.standAction(session);
+        finished = true;
+      } else {
+        const result = await blackjack.doubleAction(session);
+        updated = result.session;
+        finished = true;
+      }
 
-    let outcome: string | undefined;
-    let balanceAfter: number | undefined;
-    if (finished) {
-      const result = blackjack.getOutcome(updated);
-      balanceAfter = await wallet.getBalance(guildId, interaction.user.id);
-      outcome = formatBlackjackOutcome(result, config, balanceAfter);
-    }
+      let outcome: string | undefined;
+      let balanceAfter: number | undefined;
+      if (finished) {
+        const result = blackjack.getOutcome(updated);
+        balanceAfter = await wallet.getBalance(guildId, interaction.user.id);
+        outcome = formatBlackjackOutcome(result, config, balanceAfter);
+      }
 
-    const balance = await wallet.getBalance(guildId, interaction.user.id);
-    const canDouble =
-      !finished &&
-      !updated.doubled &&
-      (updated.playerCards as Card[]).length === 2 &&
-      balance >= updated.wager;
+      const balance = await wallet.getBalance(guildId, interaction.user.id);
+      const canDouble =
+        !finished &&
+        !updated.doubled &&
+        (updated.playerCards as Card[]).length === 2 &&
+        balance >= updated.wager;
 
-    const embed = buildBlackjackEmbed(updated, config, finished, outcome, {
-      userId: interaction.user.id,
-      isPublic: true,
-      wager: updated.wager,
+      const embed = buildBlackjackEmbed(updated, config, finished, outcome, {
+        userId: interaction.user.id,
+        isPublic: true,
+        wager: updated.wager,
+      });
+      const replay: CasinoReplayOptions = {
+        userId: interaction.user.id,
+        game: "blackjack",
+        amount: updated.wager,
+      };
+      const components = buildBlackjackComponents(updated.id, canDouble, finished, replay);
+
+      await interaction.update({ embeds: [embed], components });
     });
-    const replay: CasinoReplayOptions = {
-      userId: interaction.user.id,
-      game: "blackjack",
-      amount: updated.wager,
-    };
-    const components = buildBlackjackComponents(updated.id, canDouble, finished, replay);
-
-    await interaction.update({ embeds: [embed], components });
   } catch (err) {
-    if (err instanceof BlackjackSessionError) {
+    if (err instanceof BlackjackSessionError || err instanceof CasinoBusyError) {
       await interaction.reply({ content: err.message, ephemeral: true });
       return;
     }

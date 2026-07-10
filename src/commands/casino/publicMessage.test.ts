@@ -35,6 +35,12 @@ describe("publicMessage", () => {
     expect(footer).toContain("**");
   });
 
+  test("publicResultFooter shows profit on wins", () => {
+    const footer = publicResultFooter(500, 1000, config, { balance: 5500 });
+    expect(footer).toContain("+500");
+    expect(footer).toContain("profit");
+  });
+
   test("publicResultFooter shows loss line", () => {
     const footer = publicResultFooter(100, 0, config, { lost: true });
     expect(footer).toContain("Lost");

@@ -21,6 +21,7 @@ import { HiloSessionError } from "../../services/casino/hilo/session";
 import { BlackjackSessionError } from "../../services/blackjack/session";
 import { type CoinSide } from "../../services/coinflip";
 import { InsufficientFundsError } from "../../services/wallet";
+import { casinoLock, CasinoBusyError, disableButtonComponents } from "../../services/casino/lock";
 import { assertGuild } from "../../utils/permissions";
 import { BetValidationError, formatCurrency } from "../../utils/bets";
 import { buildButtonId } from "../../utils/buttons";
@@ -172,16 +173,31 @@ function buildMinesComponents(session: MinesSession): ActionRowBuilder<ButtonBui
   return rows;
 }
 
-async function ensureFunds(
-  wallet: WalletService,
-  guildId: string,
-  userId: string,
-  amount: number,
-): Promise<void> {
-  const balance = await wallet.getBalance(guildId, userId);
-  if (balance < amount) {
-    throw new InsufficientFundsError();
+async function replyCasinoError(
+  interaction: ButtonInteraction | ModalSubmitInteraction,
+  err: unknown,
+): Promise<boolean> {
+  if (
+    err instanceof InsufficientFundsError ||
+    err instanceof BetValidationError ||
+    err instanceof BlackjackSessionError ||
+    err instanceof MinesSessionError ||
+    err instanceof HiloSessionError ||
+    err instanceof PublicGameMessageError ||
+    err instanceof CasinoBusyError ||
+    err instanceof LotteryError ||
+    err instanceof LotteryInsufficientFundsError ||
+    err instanceof KenoPickError
+  ) {
+    const payload = { content: err.message, embeds: [] as EmbedBuilder[], components: [] as [] };
+    if (interaction.deferred || interaction.replied) {
+      await interaction.editReply(payload);
+    } else {
+      await interaction.reply(ephemeralOptions(payload));
+    }
+    return true;
   }
+  return false;
 }
 
 export async function handleCasino(
@@ -515,150 +531,136 @@ export async function handleCasinoPlayAgain(
   }
 
   try {
-    const amount = parseWagerAmount(String(replay.amount), config);
-    await ensureFunds(wallet, guildId, interaction.user.id, amount);
-    await recordCasinoWager(wallet, guildId, interaction.user.id, amount);
-    await interaction.deferUpdate();
+    await casinoLock.run(guildId, interaction.user.id, async () => {
+      const amount = parseWagerAmount(String(replay.amount), config);
+      await disableButtonComponents(interaction);
+      await recordCasinoWager(wallet, guildId, interaction.user.id, amount);
 
-    const edit = (payload: Parameters<typeof interaction.message.edit>[0]) =>
-      interaction.message.edit(payload);
-    const ctx = {
-      isPublic: true as const,
-      userId: replay.userId,
-      gameLabel: getCasinoGameLabel(replay.game),
-      wager: amount,
-      config,
-    };
+      const edit = (payload: Parameters<typeof interaction.message.edit>[0]) =>
+        interaction.message.edit(payload);
+      const ctx = {
+        isPublic: true as const,
+        userId: replay.userId,
+        gameLabel: getCasinoGameLabel(replay.game),
+        wager: amount,
+        config,
+      };
 
-    switch (replay.game) {
-      case "slots": {
-        const startingJackpot = (await slotsJackpot.getJackpot(guildId)).accumulatedLosses;
-        await runSlotsAnimation(
-          edit,
-          guildId,
-          replay.userId,
-          amount,
-          wallet,
-          slotsJackpot,
-          config,
-          startingJackpot,
-        );
-        return;
+      switch (replay.game) {
+        case "slots": {
+          const startingJackpot = (await slotsJackpot.getJackpot(guildId)).accumulatedLosses;
+          await runSlotsAnimation(
+            edit,
+            guildId,
+            replay.userId,
+            amount,
+            wallet,
+            slotsJackpot,
+            config,
+            startingJackpot,
+          );
+          return;
+        }
+        case "plinko":
+          await runPlinkoAnimation(edit, guildId, replay.userId, amount, wallet, config);
+          return;
+        case "roulette":
+          await runRouletteAnimation(
+            edit,
+            guildId,
+            replay.userId,
+            amount,
+            replay.rouletteBet!,
+            wallet,
+            config,
+          );
+          return;
+        case "coinflip":
+          await runCoinflipAnimation(
+            edit,
+            wallet,
+            guildId,
+            replay.userId,
+            amount,
+            replay.coinflipSide!,
+            config,
+            ctx,
+          );
+          return;
+        case "lucky":
+          await runLuckyAnimation(
+            edit,
+            wallet,
+            guildId,
+            replay.userId,
+            amount,
+            replay.luckyPick!,
+            config,
+            ctx,
+          );
+          return;
+        case "keno":
+          await runKenoAnimation(
+            edit,
+            wallet,
+            guildId,
+            replay.userId,
+            amount,
+            replay.kenoPicks!,
+            config,
+            ctx,
+          );
+          return;
+        case "hilo": {
+          const session = await hilo.startSession(
+            guildId,
+            replay.userId,
+            channelId,
+            amount,
+          );
+          await edit({
+            embeds: [buildHiLoEmbed(session, config, undefined, replay.userId)],
+            components: hiloComponentsForSession(session),
+          });
+          await hilo.setMessageId(session.id, interaction.message.id);
+          return;
+        }
+        case "blackjack":
+          await replayBlackjackOnMessage(
+            interaction,
+            amount,
+            wallet,
+            blackjack,
+            config,
+          );
+          return;
+        case "mines": {
+          const mineCount = replay.minesCount!;
+          const session = await mines.startSession(
+            guildId,
+            replay.userId,
+            channelId,
+            amount,
+            mineCount,
+          );
+          await edit({
+            embeds: [
+              buildMinesEmbed(
+                session,
+                config,
+                "Reveal tiles to find gems. Cash out before hitting a mine!",
+                replay.userId,
+              ),
+            ],
+            components: buildMinesComponents(session),
+          });
+          await mines.setMessageId(session.id, interaction.message.id);
+          return;
+        }
       }
-      case "plinko":
-        await runPlinkoAnimation(edit, guildId, replay.userId, amount, wallet, config);
-        return;
-      case "roulette":
-        await runRouletteAnimation(
-          edit,
-          guildId,
-          replay.userId,
-          amount,
-          replay.rouletteBet!,
-          wallet,
-          config,
-        );
-        return;
-      case "coinflip":
-        await runCoinflipAnimation(
-          edit,
-          wallet,
-          guildId,
-          replay.userId,
-          amount,
-          replay.coinflipSide!,
-          config,
-          ctx,
-        );
-        return;
-      case "lucky":
-        await runLuckyAnimation(
-          edit,
-          wallet,
-          guildId,
-          replay.userId,
-          amount,
-          replay.luckyPick!,
-          config,
-          ctx,
-        );
-        return;
-      case "keno":
-        await runKenoAnimation(
-          edit,
-          wallet,
-          guildId,
-          replay.userId,
-          amount,
-          replay.kenoPicks!,
-          config,
-          ctx,
-        );
-        return;
-      case "hilo": {
-        const session = await hilo.startSession(
-          guildId,
-          replay.userId,
-          channelId,
-          amount,
-        );
-        await edit({
-          embeds: [buildHiLoEmbed(session, config, undefined, replay.userId)],
-          components: hiloComponentsForSession(session),
-        });
-        await hilo.setMessageId(session.id, interaction.message.id);
-        return;
-      }
-      case "blackjack":
-        await replayBlackjackOnMessage(
-          interaction,
-          amount,
-          wallet,
-          blackjack,
-          config,
-        );
-        return;
-      case "mines": {
-        const mineCount = replay.minesCount!;
-        const session = await mines.startSession(
-          guildId,
-          replay.userId,
-          channelId,
-          amount,
-          mineCount,
-        );
-        await edit({
-          embeds: [
-            buildMinesEmbed(
-              session,
-              config,
-              "Reveal tiles to find gems. Cash out before hitting a mine!",
-              replay.userId,
-            ),
-          ],
-          components: buildMinesComponents(session),
-        });
-        await mines.setMessageId(session.id, interaction.message.id);
-        return;
-      }
-    }
+    });
   } catch (err) {
-    if (
-      err instanceof InsufficientFundsError ||
-      err instanceof BetValidationError ||
-      err instanceof BlackjackSessionError ||
-      err instanceof MinesSessionError ||
-      err instanceof HiloSessionError ||
-      err instanceof PublicGameMessageError
-    ) {
-      const payload = { content: err.message, embeds: [], components: [] as [] };
-      if (interaction.deferred || interaction.replied) {
-        await interaction.editReply(payload);
-      } else {
-        await interaction.reply(ephemeralOptions(payload));
-      }
-      return;
-    }
+    if (await replyCasinoError(interaction, err)) return;
     throw err;
   }
 }
@@ -702,52 +704,41 @@ export async function handleCasinoWagerBet(
   config: Config,
 ) {
   const guildId = assertGuild(interaction);
-  const userWallet = await wallet.getOrCreateWallet(guildId, interaction.user.id);
-  const amount = resolveWagerAmount(
-    amountToken,
-    userWallet.lastWager ?? null,
-    config,
-    userWallet.balance,
-  );
-
-  if (amount == null) {
-    await interaction.reply({
-      content: "That wager is not available. Try a different amount or use Custom.",
-      ephemeral: true,
-    });
-    return;
-  }
 
   try {
-    await ensureFunds(wallet, guildId, interaction.user.id, amount);
+    await casinoLock.run(guildId, interaction.user.id, async () => {
+      const userWallet = await wallet.getOrCreateWallet(guildId, interaction.user.id);
+      const amount = resolveWagerAmount(
+        amountToken,
+        userWallet.lastWager ?? null,
+        config,
+        userWallet.balance,
+      );
 
-    if (game === "lucky") {
-      await showLuckyNumberPicker(interaction, amount, config);
-      return;
-    }
-
-    if (game === "keno") {
-      await showKenoPicker(interaction, amount, config);
-      return;
-    }
-
-    await executeCasinoGame(interaction, game, amount, wallet, blackjack, slotsJackpot, hilo, config);
-  } catch (err) {
-    if (
-      err instanceof InsufficientFundsError ||
-      err instanceof BetValidationError ||
-      err instanceof BlackjackSessionError ||
-      err instanceof HiloSessionError ||
-      err instanceof PublicGameMessageError
-    ) {
-      const payload = { content: err.message };
-      if (interaction.deferred || interaction.replied) {
-        await interaction.editReply(payload);
-      } else {
-        await interaction.reply(ephemeralOptions(payload));
+      if (amount == null) {
+        await interaction.reply({
+          content: "That wager is not available. Try a different amount or use Custom.",
+          ephemeral: true,
+        });
+        return;
       }
-      return;
-    }
+
+      await disableButtonComponents(interaction);
+
+      if (game === "lucky") {
+        await showLuckyNumberPicker(interaction, amount, config);
+        return;
+      }
+
+      if (game === "keno") {
+        await showKenoPicker(interaction, amount, config);
+        return;
+      }
+
+      await executeCasinoGame(interaction, game, amount, wallet, blackjack, slotsJackpot, hilo, config);
+    });
+  } catch (err) {
+    if (await replyCasinoError(interaction, err)) return;
     throw err;
   }
 }
@@ -764,45 +755,37 @@ export async function handleCasinoCustomAmountModal(
   const guildId = assertGuild(interaction);
 
   try {
-    const amount = parseCustomWagerAmount(
-      interaction.fields.getTextInputValue("amount"),
-      config,
-      (await wallet.getBalance(guildId, interaction.user.id)),
-    );
-    await ensureFunds(wallet, guildId, interaction.user.id, amount);
+    await casinoLock.run(guildId, interaction.user.id, async () => {
+      const amount = parseCustomWagerAmount(
+        interaction.fields.getTextInputValue("amount"),
+        config,
+        (await wallet.getBalance(guildId, interaction.user.id)),
+      );
 
-    if (game === "lucky") {
-      await interaction.reply({
-        embeds: [],
-        content: `Wager: **${formatCurrency(amount, config)}** — pick your lucky number:`,
-        components: luckyNumberRows(amount),
-        ephemeral: true,
-      });
-      return;
-    }
+      if (game === "lucky") {
+        await interaction.reply({
+          embeds: [],
+          content: `Wager: **${formatCurrency(amount, config)}** — pick your lucky number:`,
+          components: luckyNumberRows(amount),
+          ephemeral: true,
+        });
+        return;
+      }
 
-    if (game === "keno") {
-      await interaction.reply({
-        embeds: [],
-        content: `Wager: **${formatCurrency(amount, config)}** — choose your numbers:`,
-        components: kenoPickRows(amount),
-        ephemeral: true,
-      });
-      return;
-    }
+      if (game === "keno") {
+        await interaction.reply({
+          embeds: [],
+          content: `Wager: **${formatCurrency(amount, config)}** — choose your numbers:`,
+          components: kenoPickRows(amount),
+          ephemeral: true,
+        });
+        return;
+      }
 
-    await executeCasinoGame(interaction, game, amount, wallet, blackjack, slotsJackpot, hilo, config);
+      await executeCasinoGame(interaction, game, amount, wallet, blackjack, slotsJackpot, hilo, config);
+    });
   } catch (err) {
-    if (
-      err instanceof BetValidationError ||
-      err instanceof InsufficientFundsError ||
-      err instanceof BlackjackSessionError ||
-      err instanceof HiloSessionError ||
-      err instanceof PublicGameMessageError
-    ) {
-      await interaction.reply({ content: err.message, ephemeral: true });
-      return;
-    }
+    if (await replyCasinoError(interaction, err)) return;
     throw err;
   }
 }
@@ -817,29 +800,24 @@ export async function handleCasinoLuckyPick(
   hilo: HiloSessionService,
   config: Config,
 ) {
-  assertGuild(interaction);
+  const guildId = assertGuild(interaction);
 
   try {
-    const amount = parseWagerAmount(amountStr, config);
-    await ensureFunds(wallet, interaction.guildId!, interaction.user.id, amount);
+    await casinoLock.run(guildId, interaction.user.id, async () => {
+      const amount = parseWagerAmount(amountStr, config);
+      await disableButtonComponents(interaction);
 
-    let pick: number;
-    if (pickToken === "rand") {
-      pick = randomLuckyPick();
-    } else {
-      pick = parseLuckyPick(pickToken);
-    }
+      let pick: number;
+      if (pickToken === "rand") {
+        pick = randomLuckyPick();
+      } else {
+        pick = parseLuckyPick(pickToken);
+      }
 
-    await executeLuckyWithPick(interaction, amount, pick, wallet, blackjack, slotsJackpot, hilo, config);
+      await executeLuckyWithPick(interaction, amount, pick, wallet, blackjack, slotsJackpot, hilo, config);
+    });
   } catch (err) {
-    if (
-      err instanceof BetValidationError ||
-      err instanceof InsufficientFundsError ||
-      err instanceof Error
-    ) {
-      await interaction.reply({ content: err.message, ephemeral: true });
-      return;
-    }
+    if (await replyCasinoError(interaction, err)) return;
     throw err;
   }
 }
@@ -853,22 +831,16 @@ export async function handleCasinoLuckyCustomModal(
   hilo: HiloSessionService,
   config: Config,
 ) {
-  assertGuild(interaction);
+  const guildId = assertGuild(interaction);
 
   try {
-    const amount = parseWagerAmount(amountStr, config);
-    const pick = parseLuckyPick(interaction.fields.getTextInputValue("number"));
-    await ensureFunds(wallet, interaction.guildId!, interaction.user.id, amount);
-    await executeLuckyWithPick(interaction, amount, pick, wallet, blackjack, slotsJackpot, hilo, config);
+    await casinoLock.run(guildId, interaction.user.id, async () => {
+      const amount = parseWagerAmount(amountStr, config);
+      const pick = parseLuckyPick(interaction.fields.getTextInputValue("number"));
+      await executeLuckyWithPick(interaction, amount, pick, wallet, blackjack, slotsJackpot, hilo, config);
+    });
   } catch (err) {
-    if (
-      err instanceof BetValidationError ||
-      err instanceof InsufficientFundsError ||
-      err instanceof Error
-    ) {
-      await interaction.reply({ content: err.message, ephemeral: true });
-      return;
-    }
+    if (await replyCasinoError(interaction, err)) return;
     throw err;
   }
 }
@@ -890,29 +862,18 @@ export async function handleCasinoKenoQuickPick(
   blackjack: BlackjackSessionService,
   config: Config,
 ) {
-  assertGuild(interaction);
+  const guildId = assertGuild(interaction);
 
   try {
-    const amount = parseWagerAmount(amountStr, config);
-    await ensureFunds(wallet, interaction.guildId!, interaction.user.id, amount);
-    const spotCount = Number.parseInt(spotCountStr, 10);
-    const picks = generateQuickPick(spotCount);
-    await executeKenoWithPicks(interaction, amount, picks, wallet, blackjack, config);
+    await casinoLock.run(guildId, interaction.user.id, async () => {
+      const amount = parseWagerAmount(amountStr, config);
+      await disableButtonComponents(interaction);
+      const spotCount = Number.parseInt(spotCountStr, 10);
+      const picks = generateQuickPick(spotCount);
+      await executeKenoWithPicks(interaction, amount, picks, wallet, blackjack, config);
+    });
   } catch (err) {
-    if (
-      err instanceof BetValidationError ||
-      err instanceof InsufficientFundsError ||
-      err instanceof KenoPickError ||
-      err instanceof Error
-    ) {
-      const payload = ephemeralOptions({ content: err.message });
-      if (interaction.deferred || interaction.replied) {
-        await interaction.editReply(payload);
-      } else {
-        await interaction.reply(payload);
-      }
-      return;
-    }
+    if (await replyCasinoError(interaction, err)) return;
     throw err;
   }
 }
@@ -933,28 +894,16 @@ export async function handleCasinoKenoCustomModal(
   blackjack: BlackjackSessionService,
   config: Config,
 ) {
-  assertGuild(interaction);
+  const guildId = assertGuild(interaction);
 
   try {
-    const amount = parseWagerAmount(amountStr, config);
-    const picks = parseKenoPicks(interaction.fields.getTextInputValue("picks"));
-    await ensureFunds(wallet, interaction.guildId!, interaction.user.id, amount);
-    await executeKenoWithPicks(interaction, amount, picks, wallet, blackjack, config);
+    await casinoLock.run(guildId, interaction.user.id, async () => {
+      const amount = parseWagerAmount(amountStr, config);
+      const picks = parseKenoPicks(interaction.fields.getTextInputValue("picks"));
+      await executeKenoWithPicks(interaction, amount, picks, wallet, blackjack, config);
+    });
   } catch (err) {
-    if (
-      err instanceof BetValidationError ||
-      err instanceof InsufficientFundsError ||
-      err instanceof KenoPickError ||
-      err instanceof Error
-    ) {
-      const payload = ephemeralOptions({ content: err.message });
-      if (interaction.deferred || interaction.replied) {
-        await interaction.editReply(payload);
-      } else {
-        await interaction.reply(payload);
-      }
-      return;
-    }
+    if (await replyCasinoError(interaction, err)) return;
     throw err;
   }
 }
@@ -974,28 +923,21 @@ export async function handleCasinoRouletteBet(
   }
 
   try {
-    const amount = parseWagerAmount(amountStr, config);
-    await ensureFunds(wallet, guildId, interaction.user.id, amount);
-    await interaction.deferUpdate();
-    await runRouletteAnimation(
-      (p) => interaction.editReply({ ...p, content: null, components: p.components ?? [] }),
-      guildId,
-      interaction.user.id,
-      amount,
-      bet,
-      wallet,
-      config,
-    );
+    await casinoLock.run(guildId, interaction.user.id, async () => {
+      const amount = parseWagerAmount(amountStr, config);
+      await disableButtonComponents(interaction);
+      await runRouletteAnimation(
+        (p) => interaction.editReply({ ...p, content: null, components: p.components ?? [] }),
+        guildId,
+        interaction.user.id,
+        amount,
+        bet,
+        wallet,
+        config,
+      );
+    });
   } catch (err) {
-    if (err instanceof BetValidationError || err instanceof InsufficientFundsError) {
-      const payload = { content: err.message, embeds: [], components: [] as [] };
-      if (interaction.deferred || interaction.replied) {
-        await interaction.editReply(payload);
-      } else {
-        await interaction.reply({ content: err.message, ephemeral: true });
-      }
-      return;
-    }
+    if (await replyCasinoError(interaction, err)) return;
     throw err;
   }
 }
@@ -1015,34 +957,28 @@ export async function handleCasinoCoinflipSide(
   }
 
   try {
-    const amount = parseWagerAmount(amountStr, config);
-    await interaction.deferUpdate();
-    await runCoinflipAnimation(
-      (p) => interaction.editReply({ ...p, content: null, components: p.components ?? [] }),
-      wallet,
-      guildId,
-      interaction.user.id,
-      amount,
-      side,
-      config,
-      {
-        isPublic: true,
-        userId: interaction.user.id,
-        gameLabel: "Coinflip",
-        wager: amount,
+    await casinoLock.run(guildId, interaction.user.id, async () => {
+      const amount = parseWagerAmount(amountStr, config);
+      await disableButtonComponents(interaction);
+      await runCoinflipAnimation(
+        (p) => interaction.editReply({ ...p, content: null, components: p.components ?? [] }),
+        wallet,
+        guildId,
+        interaction.user.id,
+        amount,
+        side,
         config,
-      },
-    );
+        {
+          isPublic: true,
+          userId: interaction.user.id,
+          gameLabel: "Coinflip",
+          wager: amount,
+          config,
+        },
+      );
+    });
   } catch (err) {
-    if (err instanceof BetValidationError || err instanceof InsufficientFundsError) {
-      const payload = { content: err.message, embeds: [], components: [] as [] };
-      if (interaction.deferred || interaction.replied) {
-        await interaction.editReply(payload);
-      } else {
-        await interaction.reply({ content: err.message, ephemeral: true });
-      }
-      return;
-    }
+    if (await replyCasinoError(interaction, err)) return;
     throw err;
   }
 }
@@ -1055,7 +991,7 @@ export async function handleCasinoHiLoGuess(
   wallet: WalletService,
   config: Config,
 ) {
-  assertGuild(interaction);
+  const guildId = assertGuild(interaction);
   const session = await hilo.getSession(sessionId);
 
   if (!session) {
@@ -1068,7 +1004,9 @@ export async function handleCasinoHiLoGuess(
   }
 
   try {
-    const { session: updated, drawnCard, won, deckCleared } = await hilo.guess(session, choice);
+    await casinoLock.run(guildId, interaction.user.id, async () => {
+      await disableButtonComponents(interaction);
+      const { session: updated, drawnCard, won, deckCleared } = await hilo.guess(session, choice);
 
     if (!won) {
       const balance = await wallet.getBalance(updated.guildId, updated.userId);
@@ -1128,11 +1066,9 @@ export async function handleCasinoHiLoGuess(
       ],
       components: hiloComponentsForSession(updated),
     });
+    });
   } catch (err) {
-    if (err instanceof HiloSessionError) {
-      await interaction.reply({ content: err.message, ephemeral: true });
-      return;
-    }
+    if (await replyCasinoError(interaction, err)) return;
     throw err;
   }
 }
@@ -1144,7 +1080,7 @@ export async function handleCasinoHiLoCashout(
   wallet: WalletService,
   config: Config,
 ) {
-  assertGuild(interaction);
+  const guildId = assertGuild(interaction);
   const session = await hilo.getSession(sessionId);
 
   if (!session) {
@@ -1157,32 +1093,32 @@ export async function handleCasinoHiLoCashout(
   }
 
   try {
-    const { session: updated, payout } = await hilo.cashOut(session);
-    const balance = await wallet.getBalance(updated.guildId, updated.userId);
+    await casinoLock.run(guildId, interaction.user.id, async () => {
+      await disableButtonComponents(interaction);
+      const { session: updated, payout } = await hilo.cashOut(session);
+      const balance = await wallet.getBalance(updated.guildId, updated.userId);
 
-    await interaction.update({
-      embeds: [
-        buildHiLoEmbed(
-          updated,
-          config,
-          `💰 **Cashed out!** Won **${formatCurrency(payout, config)}**\n\n${publicResultFooter(updated.wager, payout, config, { balance })}`,
-          updated.userId,
-        ),
-      ],
-      components: [
-        ...hiloComponentsForSession(updated),
-        ...casinoPostGameComponents({
-          userId: updated.userId,
-          game: "hilo",
-          amount: updated.wager,
-        }),
-      ],
+      await interaction.update({
+        embeds: [
+          buildHiLoEmbed(
+            updated,
+            config,
+            `💰 **Cashed out!** Won **${formatCurrency(payout, config)}**\n\n${publicResultFooter(updated.wager, payout, config, { balance })}`,
+            updated.userId,
+          ),
+        ],
+        components: [
+          ...hiloComponentsForSession(updated),
+          ...casinoPostGameComponents({
+            userId: updated.userId,
+            game: "hilo",
+            amount: updated.wager,
+          }),
+        ],
+      });
     });
   } catch (err) {
-    if (err instanceof HiloSessionError) {
-      await interaction.reply({ content: err.message, ephemeral: true });
-      return;
-    }
+    if (await replyCasinoError(interaction, err)) return;
     throw err;
   }
 }
@@ -1208,67 +1144,54 @@ export async function handleCasinoMinesConfig(
   }
 
   try {
-    const amount = parseWagerAmount(amountStr, config);
-    const mineCount = Number.parseInt(mineCountStr, 10) as MinesCount;
-    if (![3, 5, 8].includes(mineCount)) {
-      throw new Error("Invalid mine count.");
-    }
+    await casinoLock.run(guildId, interaction.user.id, async () => {
+      const amount = parseWagerAmount(amountStr, config);
+      const mineCount = Number.parseInt(mineCountStr, 10) as MinesCount;
+      if (![3, 5, 8].includes(mineCount)) {
+        throw new Error("Invalid mine count.");
+      }
 
-    let sessionId = "";
+      await disableButtonComponents(interaction);
 
-    try {
-      const { message } = await postPublicGameMessage(interaction, async () => {
-        const session = await mines.startSession(
-          guildId,
-          interaction.user.id,
-          channelId,
-          amount,
-          mineCount,
+      let sessionId = "";
+
+      try {
+        const { message } = await postPublicGameMessage(interaction, async () => {
+          const session = await mines.startSession(
+            guildId,
+            interaction.user.id,
+            channelId,
+            amount,
+            mineCount,
+          );
+          sessionId = session.id;
+
+          return {
+            embeds: [
+              buildMinesEmbed(
+                session,
+                config,
+                "Reveal tiles to find gems. Cash out before hitting a mine!",
+                interaction.user.id,
+              ),
+            ],
+            components: buildMinesComponents(session),
+          };
+        });
+
+        await mines.setMessageId(sessionId, message.id);
+      } catch (err) {
+        await rollbackCreatedSession(
+          err,
+          sessionId,
+          (id) => mines.getSession(id),
+          (session) => mines.expireSession(session),
         );
-        sessionId = session.id;
-
-        return {
-          embeds: [
-            buildMinesEmbed(
-              session,
-              config,
-              "Reveal tiles to find gems. Cash out before hitting a mine!",
-              interaction.user.id,
-            ),
-          ],
-          components: buildMinesComponents(session),
-        };
-      });
-
-      await mines.setMessageId(sessionId, message.id);
-    } catch (err) {
-      await rollbackCreatedSession(
-        err,
-        sessionId,
-        (id) => mines.getSession(id),
-        (session) => mines.expireSession(session),
-      );
-      if (err instanceof BetValidationError || err instanceof InsufficientFundsError || err instanceof MinesSessionError) {
-        const payload = { content: err.message };
-        if (interaction.deferred || interaction.replied) {
-          await interaction.editReply(payload);
-        } else {
-          await interaction.reply(ephemeralOptions(payload));
-        }
-        return;
+        throw err;
       }
-      throw err;
-    }
+    });
   } catch (err) {
-    if (err instanceof BetValidationError || err instanceof InsufficientFundsError || err instanceof MinesSessionError) {
-      const payload = { content: err.message };
-      if (interaction.deferred || interaction.replied) {
-        await interaction.editReply(payload);
-      } else {
-        await interaction.reply(ephemeralOptions(payload));
-      }
-      return;
-    }
+    if (await replyCasinoError(interaction, err)) return;
     throw err;
   }
 }
@@ -1281,7 +1204,7 @@ export async function handleCasinoMinesReveal(
   wallet: WalletService,
   config: Config,
 ) {
-  assertGuild(interaction);
+  const guildId = assertGuild(interaction);
   const tileIndex = Number.parseInt(tileIndexStr, 10);
   const session = await mines.getSession(sessionId);
 
@@ -1295,7 +1218,8 @@ export async function handleCasinoMinesReveal(
   }
 
   try {
-    const updated = await mines.revealTile(session, tileIndex);
+    await casinoLock.run(guildId, interaction.user.id, async () => {
+      const updated = await mines.revealTile(session, tileIndex);
 
     if (updated.status === "busted") {
       const balance = await wallet.getBalance(updated.guildId, updated.userId);
@@ -1325,11 +1249,9 @@ export async function handleCasinoMinesReveal(
       embeds: [buildMinesEmbed(updated, config, undefined, updated.userId)],
       components: buildMinesComponents(updated),
     });
+    });
   } catch (err) {
-    if (err instanceof MinesSessionError) {
-      await interaction.reply({ content: err.message, ephemeral: true });
-      return;
-    }
+    if (await replyCasinoError(interaction, err)) return;
     throw err;
   }
 }
@@ -1341,7 +1263,7 @@ export async function handleCasinoMinesCashout(
   wallet: WalletService,
   config: Config,
 ) {
-  assertGuild(interaction);
+  const guildId = assertGuild(interaction);
   const session = await mines.getSession(sessionId);
 
   if (!session) {
@@ -1354,33 +1276,33 @@ export async function handleCasinoMinesCashout(
   }
 
   try {
-    const { session: updated, payout } = await mines.cashOut(session);
-    const balance = await wallet.getBalance(updated.guildId, updated.userId);
+    await casinoLock.run(guildId, interaction.user.id, async () => {
+      await disableButtonComponents(interaction);
+      const { session: updated, payout } = await mines.cashOut(session);
+      const balance = await wallet.getBalance(updated.guildId, updated.userId);
 
-    await interaction.update({
-      embeds: [
-        buildMinesEmbed(
-          updated,
-          config,
-          `💰 **Cashed out!** Won **${formatCurrency(payout, config)}**\n\n${publicResultFooter(updated.wager, payout, config, { balance })}`,
-          updated.userId,
-        ),
-      ],
-      components: [
-        ...buildMinesComponents(updated),
-        ...casinoPostGameComponents({
-          userId: updated.userId,
-          game: "mines",
-          amount: updated.wager,
-          minesCount: updated.mineCount as MinesCount,
-        }),
-      ],
+      await interaction.update({
+        embeds: [
+          buildMinesEmbed(
+            updated,
+            config,
+            `💰 **Cashed out!** Won **${formatCurrency(payout, config)}**\n\n${publicResultFooter(updated.wager, payout, config, { balance })}`,
+            updated.userId,
+          ),
+        ],
+        components: [
+          ...buildMinesComponents(updated),
+          ...casinoPostGameComponents({
+            userId: updated.userId,
+            game: "mines",
+            amount: updated.wager,
+            minesCount: updated.mineCount as MinesCount,
+          }),
+        ],
+      });
     });
   } catch (err) {
-    if (err instanceof MinesSessionError) {
-      await interaction.reply({ content: err.message, ephemeral: true });
-      return;
-    }
+    if (await replyCasinoError(interaction, err)) return;
     throw err;
   }
 }

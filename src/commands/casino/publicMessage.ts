@@ -35,6 +35,12 @@ export function publicResultFooter(
   let footer = `Wager: **${formatCurrency(wager, config)}**`;
   if (payout > 0) {
     footer += `\nPayout: **${formatCurrency(payout, config)}**`;
+    const profit = payout - wager;
+    if (profit > 0) {
+      footer += ` (**+${formatCurrency(profit, config)}** profit)`;
+    } else if (profit === 0) {
+      footer += ` (break even)`;
+    }
   } else if (options?.lost) {
     footer += `\nLost: **${formatCurrency(wager, config)}**`;
   }
@@ -52,10 +58,10 @@ export async function deferSetupInteraction(interaction: SetupInteraction): Prom
   if (interaction.deferred || interaction.replied) return;
 
   if (interaction.isButton()) {
-    await interaction.deferUpdate();
-  } else {
-    await interaction.deferReply({ flags: EPHEMERAL });
+    await interaction.update({ components: [] });
+    return;
   }
+  await interaction.deferReply({ flags: EPHEMERAL });
 }
 
 export async function finalizeSetupInteraction(interaction: SetupInteraction): Promise<void> {
