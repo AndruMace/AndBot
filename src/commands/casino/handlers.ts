@@ -1025,9 +1025,9 @@ export async function handleCasinoHiLoGuess(
 
   try {
     await casinoLock.run(guildId, interaction.user.id, async () => {
-      const { session: updated, drawnCard, won, deckCleared } = await hilo.guess(session, choice);
+      const { session: updated, drawnCard, outcome, deckCleared } = await hilo.guess(session, choice);
 
-      if (!won) {
+      if (outcome === "loss") {
         const balance = await wallet.getBalance(updated.guildId, updated.userId);
         await deferAndEditPublicMessage(interaction, {
           embeds: [
@@ -1046,6 +1046,21 @@ export async function handleCasinoHiLoGuess(
               amount: updated.wager,
             }),
           ],
+        });
+        return;
+      }
+
+      if (outcome === "tie") {
+        await deferAndEditPublicMessage(interaction, {
+          embeds: [
+            buildHiLoEmbed(
+              updated,
+              config,
+              `Drew **${formatHiLoCard(drawnCard)}** — same rank! Streak unchanged.`,
+              updated.userId,
+            ),
+          ],
+          components: hiloComponentsForSession(updated),
         });
         return;
       }

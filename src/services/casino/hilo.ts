@@ -16,6 +16,8 @@ export const HI_LO_DECK_CLEAR_MESSAGE =
 
 export type HiLoChoice = "higher" | "lower";
 
+export type HiLoGuessOutcome = "win" | "loss" | "tie";
+
 const SUIT_SYMBOLS: Record<string, string> = {
   H: "♥",
   D: "♦",
@@ -116,10 +118,10 @@ export function resolveHiLoGuess(
   currentRank: number,
   nextRank: number,
   choice: HiLoChoice,
-): boolean {
-  if (nextRank === currentRank) return false;
-  if (choice === "higher") return nextRank > currentRank;
-  return nextRank < currentRank;
+): HiLoGuessOutcome {
+  if (nextRank === currentRank) return "tie";
+  if (choice === "higher") return nextRank > currentRank ? "win" : "loss";
+  return nextRank < currentRank ? "win" : "loss";
 }
 
 /** @deprecated Use resolveHiLoGuess */

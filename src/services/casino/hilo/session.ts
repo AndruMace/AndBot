@@ -19,6 +19,7 @@ import {
   getHiLoPotMultiple,
   resolveHiLoGuess,
   type HiLoChoice,
+  type HiLoGuessOutcome,
 } from "../hilo";
 
 function toActiveHiloSession(session: HiloSession): ActiveCasinoSessionInfo {
@@ -49,7 +50,7 @@ function isUniqueViolation(err: unknown): boolean {
 export type HiloGuessResult = {
   session: HiloSession;
   drawnCard: string;
-  won: boolean;
+  outcome: HiLoGuessOutcome;
   deckCleared: boolean;
 };
 
@@ -195,9 +196,9 @@ export class HiloSessionService {
       }
 
       const nextRank = cardRankValue(drawnCard);
-      const won = resolveHiLoGuess(currentRank, nextRank, choice);
+      const outcome = resolveHiLoGuess(currentRank, nextRank, choice);
 
-      if (!won) {
+      if (outcome === "loss") {
         const [updated] = await tx
           .update(hiloSessions)
           .set({
@@ -208,7 +209,21 @@ export class HiloSessionService {
           .where(eq(hiloSessions.id, active.id))
           .returning();
 
-        return { session: updated!, drawnCard, won: false, deckCleared: false };
+        return { session: updated!, drawnCard, outcome, deckCleared: false };
+      }
+
+      if (outcome === "tie") {
+        const [updated] = await tx
+          .update(hiloSessions)
+          .set({
+            currentCard: drawnCard,
+            remainingDeck,
+            expiresAt: addMinutes(this.config.BLACKJACK_SESSION_TIMEOUT_MINUTES),
+          })
+          .where(eq(hiloSessions.id, active.id))
+          .returning();
+
+        return { session: updated!, drawnCard, outcome, deckCleared: false };
       }
 
       const streak = active.streak + 1;
@@ -227,7 +242,7 @@ export class HiloSessionService {
         .where(eq(hiloSessions.id, active.id))
         .returning();
 
-      return { session: updated!, drawnCard, won: true, deckCleared };
+      return { session: updated!, drawnCard, outcome: "win", deckCleared };
     });
   }
 

@@ -13,10 +13,11 @@ import {
 import type { Card } from "../blackjack/engine";
 
 describe("hilo engine", () => {
-  test("resolveHiLoGuess handles ties as losses", () => {
-    expect(resolveHiLoGuess(5, 10, "higher")).toBe(true);
-    expect(resolveHiLoGuess(5, 10, "lower")).toBe(false);
-    expect(resolveHiLoGuess(5, 5, "higher")).toBe(false);
+  test("resolveHiLoGuess classifies wins, losses, and ties", () => {
+    expect(resolveHiLoGuess(5, 10, "higher")).toBe("win");
+    expect(resolveHiLoGuess(5, 10, "lower")).toBe("loss");
+    expect(resolveHiLoGuess(5, 5, "higher")).toBe("tie");
+    expect(resolveHiLoGuess(5, 5, "lower")).toBe("tie");
   });
 
   test("counts outcomes on a known micro-deck", () => {

@@ -89,12 +89,12 @@ describe("slots", () => {
 
 describe("hilo", () => {
   test("higher wins when next is higher", () => {
-    expect(resolveHiLoGuess(5, 10, "higher")).toBe(true);
-    expect(resolveHiLoGuess(5, 10, "lower")).toBe(false);
+    expect(resolveHiLoGuess(5, 10, "higher")).toBe("win");
+    expect(resolveHiLoGuess(5, 10, "lower")).toBe("loss");
   });
 
-  test("tie loses", () => {
-    expect(resolveHiLoGuess(5, 5, "higher")).toBe(false);
+  test("tie continues without busting", () => {
+    expect(resolveHiLoGuess(5, 5, "higher")).toBe("tie");
   });
 });
 
