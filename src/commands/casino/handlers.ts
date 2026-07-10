@@ -21,7 +21,13 @@ import { HiloSessionError } from "../../services/casino/hilo/session";
 import { BlackjackSessionError } from "../../services/blackjack/session";
 import { type CoinSide } from "../../services/coinflip";
 import { InsufficientFundsError } from "../../services/wallet";
-import { casinoLock, CasinoBusyError, disableButtonComponents } from "../../services/casino/lock";
+import {
+  casinoLock,
+  CasinoBusyError,
+  deferAndEditPublicMessage,
+  disableButtonComponents,
+} from "../../services/casino/lock";
+import { isInteractionAlreadyAcknowledged } from "../../utils/interactionError";
 import { assertGuild } from "../../utils/permissions";
 import { BetValidationError, formatCurrency } from "../../utils/bets";
 import { buildButtonId } from "../../utils/buttons";
@@ -177,6 +183,10 @@ async function replyCasinoError(
   interaction: ButtonInteraction | ModalSubmitInteraction,
   err: unknown,
 ): Promise<boolean> {
+  if (isInteractionAlreadyAcknowledged(err)) {
+    return true;
+  }
+
   if (
     err instanceof InsufficientFundsError ||
     err instanceof BetValidationError ||
@@ -190,10 +200,15 @@ async function replyCasinoError(
     err instanceof KenoPickError
   ) {
     const payload = { content: err.message, embeds: [] as EmbedBuilder[], components: [] as [] };
-    if (interaction.deferred || interaction.replied) {
-      await interaction.editReply(payload);
-    } else {
-      await interaction.reply(ephemeralOptions(payload));
+    try {
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply(payload);
+      } else {
+        await interaction.reply(ephemeralOptions(payload));
+      }
+    } catch (replyErr) {
+      if (isInteractionAlreadyAcknowledged(replyErr)) return true;
+      throw replyErr;
     }
     return true;
   }
@@ -723,8 +738,6 @@ export async function handleCasinoWagerBet(
         return;
       }
 
-      await disableButtonComponents(interaction);
-
       if (game === "lucky") {
         await showLuckyNumberPicker(interaction, amount, config);
         return;
@@ -805,7 +818,6 @@ export async function handleCasinoLuckyPick(
   try {
     await casinoLock.run(guildId, interaction.user.id, async () => {
       const amount = parseWagerAmount(amountStr, config);
-      await disableButtonComponents(interaction);
 
       let pick: number;
       if (pickToken === "rand") {
@@ -867,7 +879,6 @@ export async function handleCasinoKenoQuickPick(
   try {
     await casinoLock.run(guildId, interaction.user.id, async () => {
       const amount = parseWagerAmount(amountStr, config);
-      await disableButtonComponents(interaction);
       const spotCount = Number.parseInt(spotCountStr, 10);
       const picks = generateQuickPick(spotCount);
       await executeKenoWithPicks(interaction, amount, picks, wallet, blackjack, config);
@@ -1005,67 +1016,66 @@ export async function handleCasinoHiLoGuess(
 
   try {
     await casinoLock.run(guildId, interaction.user.id, async () => {
-      await disableButtonComponents(interaction);
       const { session: updated, drawnCard, won, deckCleared } = await hilo.guess(session, choice);
 
-    if (!won) {
-      const balance = await wallet.getBalance(updated.guildId, updated.userId);
-      await interaction.update({
+      if (!won) {
+        const balance = await wallet.getBalance(updated.guildId, updated.userId);
+        await deferAndEditPublicMessage(interaction, {
+          embeds: [
+            buildHiLoEmbed(
+              updated,
+              config,
+              `Drew **${formatHiLoCard(drawnCard)}** — wrong guess. Pot lost.\n\n${publicResultFooter(updated.wager, 0, config, { lost: true, balance })}`,
+              updated.userId,
+            ),
+          ],
+          components: [
+            ...hiloComponentsForSession(updated),
+            ...casinoPostGameComponents({
+              userId: updated.userId,
+              game: "hilo",
+              amount: updated.wager,
+            }),
+          ],
+        });
+        return;
+      }
+
+      if (deckCleared) {
+        const { session: cashed, payout } = await hilo.cashOut(updated, { deckClearBonus: true });
+        const balance = await wallet.getBalance(cashed.guildId, cashed.userId);
+        await deferAndEditPublicMessage(interaction, {
+          embeds: [
+            buildHiLoEmbed(
+              cashed,
+              config,
+              `Drew **${formatHiLoCard(drawnCard)}** — correct!\n\n${HI_LO_DECK_CLEAR_MESSAGE}\n\n💰 **Cashed out!** Won **${formatCurrency(payout, config)}**\n\n${publicResultFooter(cashed.wager, payout, config, { balance })}`,
+              cashed.userId,
+            ),
+          ],
+          components: [
+            ...hiloComponentsForSession(cashed),
+            ...casinoPostGameComponents({
+              userId: cashed.userId,
+              game: "hilo",
+              amount: cashed.wager,
+            }),
+          ],
+        });
+        return;
+      }
+
+      await deferAndEditPublicMessage(interaction, {
         embeds: [
           buildHiLoEmbed(
             updated,
             config,
-            `Drew **${formatHiLoCard(drawnCard)}** — wrong guess. Pot lost.\n\n${publicResultFooter(updated.wager, 0, config, { lost: true, balance })}`,
+            `Drew **${formatHiLoCard(drawnCard)}** — correct!`,
             updated.userId,
           ),
         ],
-        components: [
-          ...hiloComponentsForSession(updated),
-          ...casinoPostGameComponents({
-            userId: updated.userId,
-            game: "hilo",
-            amount: updated.wager,
-          }),
-        ],
+        components: hiloComponentsForSession(updated),
       });
-      return;
-    }
-
-    if (deckCleared) {
-      const { session: cashed, payout } = await hilo.cashOut(updated, { deckClearBonus: true });
-      const balance = await wallet.getBalance(cashed.guildId, cashed.userId);
-      await interaction.update({
-        embeds: [
-          buildHiLoEmbed(
-            cashed,
-            config,
-            `Drew **${formatHiLoCard(drawnCard)}** — correct!\n\n${HI_LO_DECK_CLEAR_MESSAGE}\n\n💰 **Cashed out!** Won **${formatCurrency(payout, config)}**\n\n${publicResultFooter(cashed.wager, payout, config, { balance })}`,
-            cashed.userId,
-          ),
-        ],
-        components: [
-          ...hiloComponentsForSession(cashed),
-          ...casinoPostGameComponents({
-            userId: cashed.userId,
-            game: "hilo",
-            amount: cashed.wager,
-          }),
-        ],
-      });
-      return;
-    }
-
-    await interaction.update({
-      embeds: [
-        buildHiLoEmbed(
-          updated,
-          config,
-          `Drew **${formatHiLoCard(drawnCard)}** — correct!`,
-          updated.userId,
-        ),
-      ],
-      components: hiloComponentsForSession(updated),
-    });
     });
   } catch (err) {
     if (await replyCasinoError(interaction, err)) return;
@@ -1094,11 +1104,10 @@ export async function handleCasinoHiLoCashout(
 
   try {
     await casinoLock.run(guildId, interaction.user.id, async () => {
-      await disableButtonComponents(interaction);
       const { session: updated, payout } = await hilo.cashOut(session);
       const balance = await wallet.getBalance(updated.guildId, updated.userId);
 
-      await interaction.update({
+      await deferAndEditPublicMessage(interaction, {
         embeds: [
           buildHiLoEmbed(
             updated,
@@ -1151,12 +1160,10 @@ export async function handleCasinoMinesConfig(
         throw new Error("Invalid mine count.");
       }
 
-      await disableButtonComponents(interaction);
-
       let sessionId = "";
 
       try {
-        const { message } = await postPublicGameMessage(interaction, async () => {
+        await postPublicGameMessage(interaction, async () => {
           const session = await mines.startSession(
             guildId,
             interaction.user.id,
@@ -1177,9 +1184,9 @@ export async function handleCasinoMinesConfig(
             ],
             components: buildMinesComponents(session),
           };
+        }, async (message) => {
+          await mines.setMessageId(sessionId, message.id);
         });
-
-        await mines.setMessageId(sessionId, message.id);
       } catch (err) {
         await rollbackCreatedSession(
           err,
@@ -1221,34 +1228,34 @@ export async function handleCasinoMinesReveal(
     await casinoLock.run(guildId, interaction.user.id, async () => {
       const updated = await mines.revealTile(session, tileIndex);
 
-    if (updated.status === "busted") {
-      const balance = await wallet.getBalance(updated.guildId, updated.userId);
-      await interaction.update({
-        embeds: [
-          buildMinesEmbed(
-            updated,
-            config,
-            `💥 **Boom!** You hit a mine and lost your wager.\n\n${publicResultFooter(updated.wager, 0, config, { lost: true, balance })}`,
-            updated.userId,
-          ),
-        ],
-        components: [
-          ...buildMinesComponents(updated),
-          ...casinoPostGameComponents({
-            userId: updated.userId,
-            game: "mines",
-            amount: updated.wager,
-            minesCount: updated.mineCount as MinesCount,
-          }),
-        ],
-      });
-      return;
-    }
+      if (updated.status === "busted") {
+        const balance = await wallet.getBalance(updated.guildId, updated.userId);
+        await deferAndEditPublicMessage(interaction, {
+          embeds: [
+            buildMinesEmbed(
+              updated,
+              config,
+              `💥 **Boom!** You hit a mine and lost your wager.\n\n${publicResultFooter(updated.wager, 0, config, { lost: true, balance })}`,
+              updated.userId,
+            ),
+          ],
+          components: [
+            ...buildMinesComponents(updated),
+            ...casinoPostGameComponents({
+              userId: updated.userId,
+              game: "mines",
+              amount: updated.wager,
+              minesCount: updated.mineCount as MinesCount,
+            }),
+          ],
+        });
+        return;
+      }
 
-    await interaction.update({
-      embeds: [buildMinesEmbed(updated, config, undefined, updated.userId)],
-      components: buildMinesComponents(updated),
-    });
+      await deferAndEditPublicMessage(interaction, {
+        embeds: [buildMinesEmbed(updated, config, undefined, updated.userId)],
+        components: buildMinesComponents(updated),
+      });
     });
   } catch (err) {
     if (await replyCasinoError(interaction, err)) return;
@@ -1277,11 +1284,10 @@ export async function handleCasinoMinesCashout(
 
   try {
     await casinoLock.run(guildId, interaction.user.id, async () => {
-      await disableButtonComponents(interaction);
       const { session: updated, payout } = await mines.cashOut(session);
       const balance = await wallet.getBalance(updated.guildId, updated.userId);
 
-      await interaction.update({
+      await deferAndEditPublicMessage(interaction, {
         embeds: [
           buildMinesEmbed(
             updated,

@@ -74,7 +74,7 @@ import {
 import type { PvpMatchFormat } from "../db/schema";
 import type { CoinSide } from "../services/pvp/challenges";
 import { parseButtonId } from "../utils/buttons";
-import { replyInteractionError } from "../utils/interactionError";
+import { replyInteractionError, isInteractionAlreadyAcknowledged } from "../utils/interactionError";
 import { PublicGameMessageError } from "../commands/casino/publicMessage";
 import type { RpsChoice } from "../services/pvp/challenges";
 
@@ -611,6 +611,9 @@ export function registerInteractionHandler(client: Client, db: Database, config:
         }
       }
     } catch (err) {
+      if (isInteractionAlreadyAcknowledged(err)) {
+        return;
+      }
       if (err instanceof PublicGameMessageError) {
         await replyInteractionError(interaction, err.message);
         return;

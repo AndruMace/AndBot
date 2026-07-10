@@ -8,8 +8,12 @@ import {
   type ModalSubmitInteraction,
 } from "discord.js";
 import type { Config } from "../../config";
-import { formatCurrency } from "../../utils/bets";
+import { formatCurrency, BetValidationError } from "../../utils/bets";
 import { ephemeralOptions, EPHEMERAL } from "../../utils/discord";
+import { InsufficientFundsError } from "../../services/wallet";
+import { BlackjackSessionError } from "../../services/blackjack/session";
+import { MinesSessionError } from "../../services/casino/mines/session";
+import { HiloSessionError } from "../../services/casino/hilo/session";
 
 export type PublicMessageEdit = (payload: MessageEditOptions) => Promise<unknown>;
 
@@ -85,6 +89,18 @@ type PublicPayload = {
 
 export type PublicPayloadFactory = () => Promise<PublicPayload>;
 
+export type AfterPublicSend = (message: Message) => Promise<void>;
+
+function isKnownCasinoSetupError(err: unknown): boolean {
+  return (
+    err instanceof HiloSessionError ||
+    err instanceof InsufficientFundsError ||
+    err instanceof BlackjackSessionError ||
+    err instanceof MinesSessionError ||
+    err instanceof BetValidationError
+  );
+}
+
 export class PublicGameMessageError extends Error {
   constructor(
     message: string,
@@ -114,6 +130,7 @@ export async function rollbackCreatedSession<T extends { status: string }>(
 export async function postPublicGameMessage(
   interaction: SetupInteraction,
   payload: PublicPayload | PublicPayloadFactory,
+  afterSend?: AfterPublicSend,
 ): Promise<{ message: Message; edit: PublicMessageEdit }> {
   const channel = interaction.channel;
   if (!channel || !channel.isTextBased() || channel.isDMBased()) {
@@ -133,8 +150,15 @@ export async function postPublicGameMessage(
       components: resolved.components ?? [],
     });
 
+    if (afterSend) {
+      await afterSend(message);
+    }
+
     await finalizeSetupInteraction(interaction);
   } catch (err) {
+    if (isKnownCasinoSetupError(err)) {
+      throw err;
+    }
     const reason = err instanceof Error ? err.message : "Failed to post public game message.";
     throw new PublicGameMessageError(reason, message?.id);
   }

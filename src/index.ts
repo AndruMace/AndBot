@@ -8,6 +8,8 @@ import { createLotteryService } from "./services/lottery/rounds";
 import { startLotteryScheduler } from "./services/lottery/scheduler";
 import { createBlackjackSessionService } from "./services/blackjack/session";
 import { startBlackjackScheduler } from "./services/blackjack/scheduler";
+import { createHiloSessionService } from "./services/casino/hilo/session";
+import { startHiloScheduler } from "./services/casino/hilo/scheduler";
 
 const config = loadConfig();
 const db = getDb(config.DATABASE_URL);
@@ -16,11 +18,13 @@ const client = createClient();
 const wallet = createWalletService(db, config);
 const lottery = createLotteryService(db, wallet, config);
 const blackjack = createBlackjackSessionService(db, wallet, config);
+const hilo = createHiloSessionService(db, wallet, config);
 
 registerInteractionHandler(client, db, config);
 registerActivityHandler(client, wallet, config);
 let lotteryScheduler: ReturnType<typeof setInterval> | undefined;
 let blackjackScheduler: ReturnType<typeof setInterval> | undefined;
+let hiloScheduler: ReturnType<typeof setInterval> | undefined;
 
 client.once("clientReady", async () => {
   console.log(`Logged in as ${client.user?.tag}`);
@@ -34,12 +38,14 @@ client.once("clientReady", async () => {
 
   lotteryScheduler = startLotteryScheduler(client, lottery, config);
   blackjackScheduler = startBlackjackScheduler(blackjack);
+  hiloScheduler = startHiloScheduler(hilo);
 });
 
 process.on("SIGINT", async () => {
   console.log("Shutting down...");
   if (lotteryScheduler) clearInterval(lotteryScheduler);
   if (blackjackScheduler) clearInterval(blackjackScheduler);
+  if (hiloScheduler) clearInterval(hiloScheduler);
   client.destroy();
   await closeDb();
   process.exit(0);
@@ -48,6 +54,7 @@ process.on("SIGINT", async () => {
 process.on("SIGTERM", async () => {
   if (lotteryScheduler) clearInterval(lotteryScheduler);
   if (blackjackScheduler) clearInterval(blackjackScheduler);
+  if (hiloScheduler) clearInterval(hiloScheduler);
   client.destroy();
   await closeDb();
   process.exit(0);

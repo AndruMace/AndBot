@@ -85,6 +85,13 @@
       "when": 1783280000000,
       "tag": "0011_blackjack_active_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1783290000000,
+      "tag": "0012_hilo_active_unique",
+      "breakpoints": true
     }
   ]
 }

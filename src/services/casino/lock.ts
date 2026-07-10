@@ -1,3 +1,5 @@
+import type { MessageEditOptions } from "discord.js";
+
 export class CasinoBusyError extends Error {
   constructor(message = "You already have a game in progress. Wait for it to finish.") {
     super(message);
@@ -38,4 +40,20 @@ export async function disableButtonComponents(
 ): Promise<void> {
   if (!interaction.isButton() || interaction.deferred || interaction.replied) return;
   await interaction.update({ components: [] });
+}
+
+/** Ack a public game message button click, then edit that message in-channel. */
+export async function deferAndEditPublicMessage(
+  interaction: {
+    deferred: boolean;
+    replied: boolean;
+    deferUpdate: () => Promise<unknown>;
+    message: { edit: (payload: MessageEditOptions) => Promise<unknown> };
+  },
+  payload: MessageEditOptions,
+): Promise<void> {
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferUpdate();
+  }
+  await interaction.message.edit(payload);
 }

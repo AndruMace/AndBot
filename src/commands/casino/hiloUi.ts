@@ -92,21 +92,26 @@ export async function startHiLoPublicSession(
   let sessionId = "";
 
   try {
-    const { message } = await postPublicGameMessage(interaction, async () => {
-      const session = await hilo.startSession(guildId, userId, channelId, amount);
-      sessionId = session.id;
-      return {
-        embeds: [buildHiLoEmbed(session, config, undefined, userId)],
-        components: hiloComponentsForSession(session),
-      };
-    });
-    await hilo.setMessageId(sessionId, message.id);
+    await postPublicGameMessage(
+      interaction,
+      async () => {
+        const session = await hilo.startSession(guildId, userId, channelId, amount);
+        sessionId = session.id;
+        return {
+          embeds: [buildHiLoEmbed(session, config, undefined, userId)],
+          components: hiloComponentsForSession(session),
+        };
+      },
+      async (message) => {
+        await hilo.setMessageId(sessionId, message.id);
+      },
+    );
   } catch (err) {
     await rollbackCreatedSession(
       err,
       sessionId,
       (id) => hilo.getSession(id),
-      (session) => hilo.expireSession(session),
+      (session) => hilo.expireSession(session).then(() => undefined),
     );
     throw err;
   }
