@@ -47,7 +47,6 @@ export function renderRouletteFrame(
 
   const art = [
     "```",
-    "      ▼",
     [
       formatColoredPocket(left2, false),
       formatColoredPocket(left1, false),
@@ -76,7 +75,7 @@ export function rouletteDelayForStep(step: number, totalDelays: number): number 
   return Math.round(90 + t * t * 460);
 }
 
-/** Wheel indices — one pocket per frame; last entry centers the result under the pointer. */
+/** Wheel indices — one pocket per frame; last entry centers the result. */
 export function buildRouletteSpinIndices(result: number): number[] {
   const targetIndex = wheelIndexForResult(result);
   const span = ROULETTE_MAX_SPIN_STEPS - ROULETTE_MIN_SPIN_STEPS + 1;
