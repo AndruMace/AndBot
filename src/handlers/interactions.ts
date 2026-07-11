@@ -565,6 +565,16 @@ export function registerInteractionHandler(
             return;
           }
 
+          if (
+            action === "create" &&
+            rest[0] &&
+            (rest[0] === "public" || rest[0] === "private")
+          ) {
+            // Legacy button order: poker:create:<userId>:<visibility>
+            await handlePokerCreatePrompt(interaction, rest[0], config);
+            return;
+          }
+
           if (action === "join" && rest[0]) {
             await handlePokerJoin(
               interaction,
@@ -730,11 +740,14 @@ export function registerInteractionHandler(
         const pokerModalParts = parseButtonId(interaction.customId, "poker");
         if (pokerModalParts) {
           const [action, sub, ...rest] = pokerModalParts;
-          if (action === "buyinModal" && sub && rest[0]) {
+          if (action === "buyinModal" && sub) {
+            const source = sub === "join" && rest.length >= 2 ? `join:${rest[0]}` : sub;
+            const ownerId = sub === "join" && rest.length >= 2 ? rest[1]! : rest[0];
+            if (!ownerId) return;
             await handlePokerBuyInModal(
               interaction,
-              sub,
-              rest[0],
+              source,
+              ownerId,
               poker,
               config,
               blackjack,

@@ -226,7 +226,7 @@ export async function handlePokerJoin(
     if (!loaded) throw new PokerTableError("Table not found.");
     const { minBuyIn } = pokerBuyInRange(config);
     await interaction.showModal(
-      pokerBuyInModal(`join:${tableId}`, interaction.user.id, Math.max(minBuyIn, loaded.table.minBuyIn)),
+      pokerBuyInModal("join", interaction.user.id, Math.max(minBuyIn, loaded.table.minBuyIn), tableId),
     );
   } catch (err) {
     await replyPokerError(interaction, err);

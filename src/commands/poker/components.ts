@@ -22,7 +22,7 @@ export function pokerLobbyRow(userId: string): ActionRowBuilder<ButtonBuilder> {
       .setStyle(ButtonStyle.Primary)
       .setEmoji("🔍"),
     new ButtonBuilder()
-      .setCustomId(buildButtonId("poker", "create", userId, "public"))
+      .setCustomId(buildButtonId("poker", "create", "public", userId))
       .setLabel("Create Table")
       .setStyle(ButtonStyle.Success)
       .setEmoji("♠️"),
@@ -149,9 +149,18 @@ export function pokerRaiseModal(tableId: string, minRaiseTo: number, maxRaiseTo:
     );
 }
 
-export function pokerBuyInModal(source: string, userId: string, defaultBuyIn: number) {
+export function pokerBuyInModal(
+  source: string,
+  userId: string,
+  defaultBuyIn: number,
+  tableId?: string,
+) {
+  const customId = tableId
+    ? buildButtonId("poker", "buyinModal", source, tableId, userId)
+    : buildButtonId("poker", "buyinModal", source, userId);
+
   return new ModalBuilder()
-    .setCustomId(buildButtonId("poker", "buyinModal", source, userId))
+    .setCustomId(customId)
     .setTitle("Poker Buy-In")
     .addComponents(
       new ActionRowBuilder<TextInputBuilder>().addComponents(
