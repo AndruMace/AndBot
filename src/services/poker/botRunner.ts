@@ -62,6 +62,7 @@ export async function runPendingBotActions(
 
     if (options?.onStep) {
       await options.onStep({ phase: "thinking", snapshot, seatIndex: actionSeat });
+    } else {
       await sleep(thinkDelay);
     }
 
@@ -78,6 +79,7 @@ export async function runPendingBotActions(
         action: decision.action,
         raiseTo: decision.raiseTo,
       });
+    } else {
       await sleep(actDelay);
     }
   }

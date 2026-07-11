@@ -1,13 +1,21 @@
 import { EmbedBuilder } from "discord.js";
 import type { Config } from "../../config";
 import type { TableSnapshot } from "../../services/poker/types";
-import { formatBoard, formatPotLine, formatSeatLine } from "./components";
+import { formatBoard, formatAnimatedBoard, formatPotLine, formatSeatLine } from "./components";
 import { formatCurrency } from "../../utils/bets";
 import { formatPokerActor, isBotUserId } from "../../services/poker/bots";
+import { formatStreetLabel, SPINNER_FRAMES } from "./visuals";
 
 export type TableEmbedExtras = {
   thinkingSeat?: number;
   lastAction?: { seatIndex: number; label: string };
+  banner?: string;
+  revealedBoardCount?: number;
+  spinnerFrame?: number;
+  showHoleBacks?: boolean;
+  celebrating?: boolean;
+  /** When false, action buttons are hidden during animation frames. */
+  interactive?: boolean;
 };
 
 export function buildPokerLobbyEmbed(config: Config): EmbedBuilder {
@@ -38,10 +46,13 @@ export function buildPokerTableEmbed(
   ];
 
   if (hand && hand.street !== "complete") {
+    if (extras?.banner) {
+      lines.push("", extras.banner);
+    }
     lines.push(
       "",
-      `**Hand #${snapshot.handNumber}** · ${hand.street}`,
-      `Board: ${formatBoard(hand.board)}`,
+      `**Hand #${snapshot.handNumber}** · ${formatStreetLabel(hand.street)}`,
+      `Board: ${extras?.revealedBoardCount != null ? formatAnimatedBoard(hand.board, extras.revealedBoardCount) : formatBoard(hand.board)}`,
       formatPotLine(snapshot),
     );
     if (extras?.lastAction) {
@@ -52,21 +63,26 @@ export function buildPokerTableEmbed(
     }
     if (extras?.thinkingSeat != null) {
       const actor = snapshot.seats[extras.thinkingSeat];
+      const spinner = extras.spinnerFrame != null ? SPINNER_FRAMES[extras.spinnerFrame % SPINNER_FRAMES.length] : "⏳";
       if (actor?.userId) {
-        lines.push(`⏳ ${formatPokerActor(actor.userId)} is thinking…`);
+        lines.push(`${spinner} ${formatPokerActor(actor.userId)} is thinking…`);
       }
     } else if (hand.actionSeat != null) {
       const actor = snapshot.seats[hand.actionSeat];
       if (actor?.userId) lines.push(`Waiting for ${formatPokerActor(actor.userId)} to act…`);
     }
   } else if (hand?.street === "complete") {
+    if (extras?.banner) lines.push("", extras.banner);
     lines.push("", `**Hand #${snapshot.handNumber} complete**`);
-    if (hand.board.length > 0) lines.push(`Board: ${formatBoard(hand.board)}`);
+    if (hand.board.length > 0) {
+      lines.push(`Board: ${formatBoard(hand.board)}`);
+    }
     for (const winner of hand.winners ?? []) {
       const user = snapshot.seats[winner.seatIndex]?.userId;
       if (user) {
+        const prefix = extras?.celebrating ? "✨ " : "";
         lines.push(
-          `${formatPokerActor(user)} wins **${formatCurrency(winner.amount, config)}**${winner.handLabel ? ` (${winner.handLabel})` : ""}`,
+          `${prefix}${formatPokerActor(user)} wins **${formatCurrency(winner.amount, config)}**${winner.handLabel ? ` (${winner.handLabel})` : ""}`,
         );
       }
     }

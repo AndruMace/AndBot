@@ -25,7 +25,8 @@ export async function editPokerTableMessage(
   if (!channel?.isTextBased()) return snapshot;
 
   const embed = buildPokerTableEmbed(snapshot, config, extras);
-  const components = pokerTableComponents(snapshot, viewerUserId);
+  const components =
+    extras?.interactive === false ? [] : pokerTableComponents(snapshot, viewerUserId);
 
   try {
     const msg = await (channel as TextChannel).messages.fetch(loaded.table.messageId);

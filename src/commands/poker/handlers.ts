@@ -8,7 +8,7 @@ import { PokerTableError } from "../../services/poker/table";
 import type { PokerTableService } from "../../services/poker/table";
 import { pokerLock } from "../../services/poker/lock";
 import { defaultHostBuyIn, maxBotSeatsForTable, parseBotCount, parseTableBuyIn, pokerTableStakes } from "../../services/poker/config";
-import { runPendingBotActions, formatBotActionLabel } from "../../services/poker/botRunner";
+import { runPendingBotActions } from "../../services/poker/botRunner";
 import { getLegalActions } from "../../services/poker/betting";
 import { assertGuild } from "../../utils/permissions";
 import { parseWagerAmount } from "../casino/types";
@@ -20,6 +20,15 @@ import {
 } from "./embeds";
 import { upsertHoleCardsEphemeral, forgetHoleCardsEphemeral } from "./holeCardsEphemeral";
 import { editPokerTableMessage } from "./tableMessage";
+import {
+  animateAfterHumanAction,
+  animateBotActed,
+  animateBotThinking,
+  animateBoardGrowth,
+  animateHandEnd,
+  animateHandStart,
+  DEFAULT_THINK_DELAY_MS,
+} from "./animation";
 import {
   pokerBrowseRow,
   pokerBuyInModal,
@@ -34,7 +43,7 @@ import type { BlackjackSessionService } from "../../services/blackjack/session";
 import type { HiloSessionService } from "../../services/casino/hilo/session";
 import type { MinesSessionService } from "../../services/casino/mines/session";
 import { deferAndEditPublicMessage } from "../../services/casino/lock";
-import type { PokerTableVisibility } from "../../services/poker/types";
+import type { PokerTableVisibility, TableSnapshot } from "../../services/poker/types";
 
 async function replyPokerError(interaction: ButtonInteraction | ModalSubmitInteraction, err: unknown) {
   const message =
@@ -89,26 +98,58 @@ async function finalizeTableTurn(
   poker: PokerTableService,
   config: Config,
   viewerUserId: string,
+  beforeSnapshot?: TableSnapshot | null,
 ) {
+  if (beforeSnapshot) {
+    await animateAfterHumanAction(
+      interaction.client,
+      poker,
+      tableId,
+      config,
+      viewerUserId,
+      beforeSnapshot,
+    );
+  }
+
+  let prevSnapshot = await poker.getSnapshot(tableId);
+
   await runPendingBotActions(tableId, poker, {
     onStep: async (step) => {
-      const extras =
-        step.phase === "thinking"
-          ? { thinkingSeat: step.seatIndex }
-          : {
-              lastAction: {
-                seatIndex: step.seatIndex,
-                label: step.action ? formatBotActionLabel(step.action, step.raiseTo) : "acts",
-              },
-            };
-      await editPokerTableMessage(
-        interaction.client,
-        poker,
-        tableId,
-        config,
-        viewerUserId,
-        extras,
-      );
+      if (step.phase === "thinking") {
+        await animateBotThinking(
+          interaction.client,
+          poker,
+          tableId,
+          config,
+          viewerUserId,
+          step,
+          DEFAULT_THINK_DELAY_MS,
+        );
+        return;
+      }
+
+      const beforeBoard = prevSnapshot?.handState?.board.length ?? 0;
+      await animateBotActed(interaction.client, poker, tableId, config, viewerUserId, step);
+
+      const after = step.snapshot;
+      if (after.handState && after.handState.board.length > beforeBoard) {
+        await animateBoardGrowth(
+          interaction.client,
+          poker,
+          tableId,
+          config,
+          viewerUserId,
+          beforeBoard,
+          after,
+        );
+      }
+      if (
+        after.handState?.street === "complete" &&
+        prevSnapshot?.handState?.street !== "complete"
+      ) {
+        await animateHandEnd(interaction.client, poker, tableId, config, viewerUserId, after);
+      }
+      prevSnapshot = after;
     },
   });
   await updateTableMessage(interaction, tableId, poker, config, viewerUserId);
@@ -346,6 +387,7 @@ export async function handlePokerStart(
 ) {
   try {
     await deferAndEditPublicMessage(interaction, { components: [] });
+    await animateHandStart(interaction.client, poker, tableId, config, interaction.user.id);
     await pokerLock.run(tableId, async () => {
       const current = await poker.getSnapshot(tableId);
       if (current?.handState?.street === "complete") {
@@ -367,11 +409,12 @@ export async function handlePokerAction(
   config: Config,
 ) {
   try {
+    const before = await poker.getSnapshot(tableId);
     await deferAndEditPublicMessage(interaction, { components: [] });
     await pokerLock.run(tableId, () =>
       poker.act(tableId, interaction.user.id, action as "fold" | "check" | "call" | "all_in"),
     );
-    await finalizeTableTurn(interaction, tableId, poker, config, interaction.user.id);
+    await finalizeTableTurn(interaction, tableId, poker, config, interaction.user.id, before);
   } catch (err) {
     await replyPokerError(interaction, err);
   }
@@ -412,6 +455,7 @@ export async function handlePokerRaiseModal(
     const amount = Number.parseInt(interaction.fields.getTextInputValue("amount").trim(), 10);
     if (Number.isNaN(amount)) throw new PokerTableError("Enter a valid amount.");
 
+    const before = await poker.getSnapshot(tableId);
     await interaction.deferUpdate();
     await pokerLock.run(tableId, () =>
       poker.act(tableId, interaction.user.id, "raise", amount),
@@ -422,6 +466,7 @@ export async function handlePokerRaiseModal(
       poker,
       config,
       interaction.user.id,
+      before,
     );
   } catch (err) {
     await replyPokerError(interaction, err);

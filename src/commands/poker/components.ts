@@ -14,6 +14,7 @@ import type { TableSnapshot } from "../../services/poker/types";
 import { totalPotAmount } from "../../services/poker/pots";
 import { formatCard } from "../../services/poker/engine";
 import { formatPokerActor, isBotUserId } from "../../services/poker/bots";
+import { CARD_BACK } from "./visuals";
 
 export function pokerLobbyRow(userId: string): ActionRowBuilder<ButtonBuilder> {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -200,6 +201,16 @@ export function formatBoard(cards: string[]): string {
   return cards.map(formatCard).join(" ");
 }
 
+export function formatAnimatedBoard(cards: string[], revealedCount: number): string {
+  if (cards.length === 0 && revealedCount === 0) return "_No community cards yet_";
+
+  const parts: string[] = [];
+  for (let i = 0; i < cards.length; i++) {
+    parts.push(i < revealedCount ? formatCard(cards[i]!) : CARD_BACK);
+  }
+  return parts.join(" ");
+}
+
 export function formatPotLine(snapshot: TableSnapshot): string {
   const hand = snapshot.handState;
   if (!hand) return "Pot: **0**";
@@ -228,7 +239,13 @@ export function formatSeatLine(
         ? " ←"
         : "";
   const status =
-    seat.status === "folded" ? " · folded" : seat.status === "all_in" ? " · all-in" : "";
+    seat.status === "folded" ? " · folded" : seat.status === "all_in" ? " · 🔥 all-in" : "";
+  const holeBacks =
+    extras?.showHoleBacks &&
+    snapshot.handState?.street !== "complete" &&
+    (seat.status === "seated" || seat.status === "all_in")
+      ? ` · ${CARD_BACK} ${CARD_BACK}`
+      : "";
   const label = isBotUserId(seat.userId) ? formatPokerActor(seat.userId) : `<@${seat.userId}>`;
-  return `Seat ${seatIndex + 1}: ${label} — **${formatCurrency(seat.stack, config)}**${marker}${status}`;
+  return `Seat ${seatIndex + 1}: ${label} — **${formatCurrency(seat.stack, config)}**${marker}${status}${holeBacks}`;
 }
