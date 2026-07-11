@@ -51,6 +51,9 @@ export const transactionTypeEnum = pgEnum("transaction_type", [
   "lottery_win",
   "lottery_refund",
   "activity_message",
+  "poker_buyin",
+  "poker_cashout",
+  "poker_win",
 ]);
 
 export const minesSessionStatusEnum = pgEnum("mines_session_status", [
@@ -91,6 +94,25 @@ export const blackjackSessionStatusEnum = pgEnum("blackjack_session_status", [
   "active",
   "completed",
   "expired",
+]);
+
+export const pokerTableStatusEnum = pgEnum("poker_table_status", [
+  "waiting",
+  "playing",
+  "closed",
+]);
+
+export const pokerTableVisibilityEnum = pgEnum("poker_table_visibility", [
+  "public",
+  "private",
+]);
+
+export const pokerSeatStatusEnum = pgEnum("poker_seat_status", [
+  "empty",
+  "seated",
+  "folded",
+  "all_in",
+  "sitting_out",
 ]);
 
 export const wallets = pgTable(
@@ -301,6 +323,54 @@ export const slotsJackpots = pgTable("slots_jackpots", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const pokerTables = pgTable(
+  "poker_tables",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    guildId: text("guild_id").notNull(),
+    channelId: text("channel_id").notNull(),
+    messageId: text("message_id"),
+    hostUserId: text("host_user_id").notNull(),
+    visibility: pokerTableVisibilityEnum("visibility").notNull().default("public"),
+    maxSeats: integer("max_seats").notNull().default(6),
+    smallBlind: bigint("small_blind", { mode: "number" }).notNull(),
+    bigBlind: bigint("big_blind", { mode: "number" }).notNull(),
+    minBuyIn: bigint("min_buy_in", { mode: "number" }).notNull(),
+    maxBuyIn: bigint("max_buy_in", { mode: "number" }).notNull(),
+    status: pokerTableStatusEnum("status").notNull().default("waiting"),
+    handNumber: integer("hand_number").notNull().default(0),
+    handState: jsonb("hand_state"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("poker_tables_guild_status_idx").on(table.guildId, table.status),
+    index("poker_tables_status_expires_idx").on(table.status, table.expiresAt),
+  ],
+);
+
+export const pokerSeats = pgTable(
+  "poker_seats",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tableId: uuid("table_id")
+      .notNull()
+      .references(() => pokerTables.id),
+    seatIndex: integer("seat_index").notNull(),
+    userId: text("user_id"),
+    stack: bigint("stack", { mode: "number" }).notNull().default(0),
+    status: pokerSeatStatusEnum("status").notNull().default("empty"),
+    holeCards: jsonb("hole_cards").$type<string[]>().notNull().default([]),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("poker_seats_table_seat_idx").on(table.tableId, table.seatIndex),
+    index("poker_seats_table_user_idx").on(table.tableId, table.userId),
+    index("poker_seats_user_idx").on(table.userId),
+  ],
+);
+
 export const ticketStatusEnum = pgEnum("ticket_status", ["open", "resolved", "closed"]);
 
 export const ticketTypeEnum = pgEnum("ticket_type", ["issue", "suggestion"]);
@@ -337,6 +407,11 @@ export type HiloSession = typeof hiloSessions.$inferSelect;
 export type LotteryRound = typeof lotteryRounds.$inferSelect;
 export type LotteryTicket = typeof lotteryTickets.$inferSelect;
 export type SlotsJackpot = typeof slotsJackpots.$inferSelect;
+export type PokerTable = typeof pokerTables.$inferSelect;
+export type PokerSeat = typeof pokerSeats.$inferSelect;
+export type PokerTableStatus = (typeof pokerTableStatusEnum.enumValues)[number];
+export type PokerTableVisibility = (typeof pokerTableVisibilityEnum.enumValues)[number];
+export type PokerSeatStatus = (typeof pokerSeatStatusEnum.enumValues)[number];
 export type AndbotTicket = typeof andbotTickets.$inferSelect;
 export type TicketStatus = (typeof ticketStatusEnum.enumValues)[number];
 export type TicketType = (typeof ticketTypeEnum.enumValues)[number];

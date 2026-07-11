@@ -16,6 +16,7 @@ import {
 import type { SlotsJackpotService } from "../../services/casino/slotsJackpot";
 import type { HiloSessionService } from "../../services/casino/hilo/session";
 import type { MinesSessionService } from "../../services/casino/mines/session";
+import type { PokerTableService } from "../../services/poker/table";
 import { assertNoActiveCasinoSession } from "../../services/casino/activeSession";
 import { startHiLoPublicSession } from "./hiloUi";
 import { rollLuckyNumber } from "../../services/casino/lucky";
@@ -345,6 +346,7 @@ export async function executeCasinoGame(
   mines: MinesSessionService,
   config: Config,
   luckyPick?: number,
+  poker?: PokerTableService,
 ) {
   const guildId = interaction.guildId!;
   const userId = interaction.user.id;
@@ -353,7 +355,7 @@ export async function executeCasinoGame(
     kind: "wager",
     game,
     amount,
-  });
+  }, poker);
 
   await recordCasinoWager(wallet, guildId, userId, amount);
 

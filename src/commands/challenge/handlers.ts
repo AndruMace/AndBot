@@ -23,7 +23,7 @@ import { ephemeralOptions } from "../../utils/discord";
 import { MemberLookupError, resolveGuildMemberByQuery } from "../../utils/guildMembers";
 import { formatMatchLabel } from "../../services/pvp/match";
 import { getWagerPresets, formatWagerButtonLabel, resolveWagerAmount, getMaxAffordableWager, parseCustomWagerAmount } from "../casino/wagers";
-import { CHALLENGE_GAMES, isChallengeGame } from "./types";
+import { CHALLENGE_GAMES, isChallengeGame, POKER_CHALLENGE_ID } from "./types";
 import {
   opponentSelectRow,
   opponentUsernameButtonRow,
@@ -50,11 +50,18 @@ function pendingKey(userId: string): string {
 }
 
 function challengeMenuEmbed(config: Config, opponentId?: string): EmbedBuilder {
-  const fields = CHALLENGE_GAMES.map((g) => ({
-    name: `${g.emoji} ${g.label}`,
-    value: g.description,
-    inline: true,
-  }));
+  const fields = [
+    ...CHALLENGE_GAMES.map((g) => ({
+      name: `${g.emoji} ${g.label}`,
+      value: g.description,
+      inline: true,
+    })),
+    {
+      name: "♠️ Poker",
+      value: "Create a private NLHE table for 2–6 players.",
+      inline: true,
+    },
+  ];
 
   const description = opponentId
     ? `Opponent: <@${opponentId}>\n\nPick a game below, then set the wager and match format.`
@@ -86,6 +93,15 @@ function challengeMenuRows(): ActionRowBuilder<ButtonBuilder>[] {
       ),
     );
   }
+  rows.push(
+    new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setCustomId(buildButtonId("challenge", "pick", POKER_CHALLENGE_ID))
+        .setLabel("Poker")
+        .setStyle(ButtonStyle.Success)
+        .setEmoji("♠️"),
+    ),
+  );
   return rows;
 }
 

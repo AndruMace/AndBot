@@ -10,7 +10,8 @@ export type CasinoGame =
   | "mines"
   | "plinko"
   | "keno"
-  | "roulette";
+  | "roulette"
+  | "poker";
 
 export const CASINO_GAMES: {
   id: CasinoGame;
@@ -27,6 +28,7 @@ export const CASINO_GAMES: {
   { id: "plinko", label: "Plinko", emoji: "🔻", description: "Drop the chip — land up to 5x." },
   { id: "keno", label: "Keno", emoji: "🎱", description: "Pick up to 10 numbers; 20 drawn from 80." },
   { id: "roulette", label: "Roulette", emoji: "🎡", description: "Red, Black, Odd, Even, or 0 (~97% RTP)." },
+  { id: "poker", label: "Poker", emoji: "♠️", description: "No-Limit Texas Hold'em — 2–6 player tables." },
 ];
 
 export function parseWagerAmount(raw: string, config: Config): number {

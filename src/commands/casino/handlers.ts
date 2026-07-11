@@ -39,6 +39,8 @@ import {
 } from "../../services/casino/mines/engine";
 import type { MinesSession } from "../../db/schema";
 import { CASINO_GAMES, type CasinoGame, parseWagerAmount, parseLuckyPick, parseKenoPicks, KenoPickError, getCasinoGameLabel, isCasinoGame } from "./types";
+import { handlePokerLobby } from "../poker";
+import type { PokerTableService } from "../../services/poker/table";
 import {
   getLotteryTicketPresets,
   LOTTERY_MENU,
@@ -666,7 +668,30 @@ export async function handleCasinoPick(
   game: CasinoGame,
   wallet: WalletService,
   config: Config,
+  services?: {
+    poker: PokerTableService;
+    blackjack: BlackjackSessionService;
+    hilo: HiloSessionService;
+    mines: MinesSessionService;
+  },
 ) {
+  if (game === "poker") {
+    if (services) {
+      const guildId = assertGuild(interaction);
+      await assertNoActiveCasinoSession(
+        guildId,
+        interaction.user.id,
+        services.blackjack,
+        services.hilo,
+        services.mines,
+        undefined,
+        services.poker,
+      );
+    }
+    await handlePokerLobby(interaction, config);
+    return;
+  }
+
   const guildId = assertGuild(interaction);
   const userWallet = await wallet.getOrCreateWallet(guildId, interaction.user.id);
 
@@ -699,6 +724,7 @@ export async function handleCasinoWagerBet(
   hilo: HiloSessionService,
   mines: MinesSessionService,
   config: Config,
+  poker?: PokerTableService,
 ) {
   const guildId = assertGuild(interaction);
 
@@ -730,7 +756,7 @@ export async function handleCasinoWagerBet(
         return;
       }
 
-      await executeCasinoGame(interaction, game, amount, wallet, blackjack, slotsJackpot, hilo, mines, config);
+      await executeCasinoGame(interaction, game, amount, wallet, blackjack, slotsJackpot, hilo, mines, config, undefined, poker);
     });
   } catch (err) {
     if (await replyCasinoError(interaction, err)) return;
@@ -747,6 +773,7 @@ export async function handleCasinoCustomAmountModal(
   hilo: HiloSessionService,
   mines: MinesSessionService,
   config: Config,
+  poker?: PokerTableService,
 ) {
   const guildId = assertGuild(interaction);
 
@@ -778,7 +805,7 @@ export async function handleCasinoCustomAmountModal(
         return;
       }
 
-      await executeCasinoGame(interaction, game, amount, wallet, blackjack, slotsJackpot, hilo, mines, config);
+      await executeCasinoGame(interaction, game, amount, wallet, blackjack, slotsJackpot, hilo, mines, config, undefined, poker);
     });
   } catch (err) {
     if (await replyCasinoError(interaction, err)) return;

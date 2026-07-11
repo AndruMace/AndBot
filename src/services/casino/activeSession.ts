@@ -7,8 +7,9 @@ import type { MinesCount } from "./mines/engine";
 import type { BlackjackSessionService } from "../blackjack/session";
 import type { HiloSessionService } from "./hilo/session";
 import type { MinesSessionService } from "./mines/session";
+import type { PokerTableService } from "../poker/table";
 
-export type ActiveCasinoSessionKind = "blackjack" | "hilo" | "mines";
+export type ActiveCasinoSessionKind = "blackjack" | "hilo" | "mines" | "poker";
 
 export type ActiveCasinoSessionInfo = {
   kind: ActiveCasinoSessionKind;
@@ -59,12 +60,14 @@ const KIND_CODE: Record<ActiveCasinoSessionKind, string> = {
   blackjack: "bj",
   hilo: "hi",
   mines: "mn",
+  poker: "pk",
 };
 
 const CODE_KIND: Record<string, ActiveCasinoSessionKind> = {
   bj: "blackjack",
   hi: "hilo",
   mn: "mines",
+  pk: "poker",
 };
 
 export function activeSessionKindCode(kind: ActiveCasinoSessionKind): string {
@@ -171,11 +174,13 @@ export async function findActiveCasinoSession(
   blackjack: BlackjackSessionService,
   hilo: HiloSessionService,
   mines: MinesSessionService,
+  poker?: PokerTableService,
 ): Promise<ActiveCasinoSessionInfo | null> {
-  const [bj, hi, mn] = await Promise.all([
+  const [bj, hi, mn, pk] = await Promise.all([
     blackjack.getActiveSession(guildId, userId),
     hilo.getActiveSession(guildId, userId),
     mines.getActiveSession(guildId, userId),
+    poker?.getActiveSeatForUser(guildId, userId) ?? Promise.resolve(null),
   ]);
 
   if (bj) {
@@ -202,6 +207,14 @@ export async function findActiveCasinoSession(
       wager: mn.wager,
     };
   }
+  if (pk) {
+    return {
+      kind: "poker",
+      sessionId: pk.tableId,
+      label: "Poker",
+      wager: pk.stack,
+    };
+  }
   return null;
 }
 
@@ -212,8 +225,9 @@ export async function assertNoActiveCasinoSession(
   hilo: HiloSessionService,
   mines: MinesSessionService,
   pending?: PendingCasinoStart,
+  poker?: PokerTableService,
 ): Promise<void> {
-  const active = await findActiveCasinoSession(guildId, userId, blackjack, hilo, mines);
+  const active = await findActiveCasinoSession(guildId, userId, blackjack, hilo, mines, poker);
   if (active) {
     throw new ActiveCasinoSessionError(active, pending);
   }
@@ -227,6 +241,8 @@ export async function forfeitCasinoSession(
   mines: MinesSessionService,
 ): Promise<boolean> {
   switch (kind) {
+    case "poker":
+      return false;
     case "blackjack": {
       const session = await blackjack.getSession(sessionId);
       if (!session) return false;

@@ -32,6 +32,12 @@ export const CHALLENGE_GAMES: {
   },
 ];
 
+export const POKER_CHALLENGE_ID = "poker";
+
+export function isPokerChallenge(id: string): boolean {
+  return id === POKER_CHALLENGE_ID;
+}
+
 export function isChallengeGame(id: string): id is PvpGameType {
   return CHALLENGE_GAMES.some((game) => game.id === id);
 }

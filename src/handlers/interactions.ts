@@ -7,6 +7,7 @@ import type { BlackjackSessionService } from "../services/blackjack/session";
 import { createMinesSessionService } from "../services/casino/mines/session";
 import type { HiloSessionService } from "../services/casino/hilo/session";
 import type { LotteryService } from "../services/lottery/rounds";
+import type { PokerTableService } from "../services/poker/table";
 import { createSlotsJackpotService } from "../services/casino/slotsJackpot";
 import { createTicketService } from "../services/tickets/tickets";
 import { handleBalance, handleDaily, handleWeekly, handlePay } from "../commands/economy";
@@ -56,6 +57,18 @@ import {
   handleCasinoLotteryCustomModal,
   isCasinoGame,
 } from "../commands/casino";
+import {
+  handlePokerLobby,
+  handlePokerBrowse,
+  handlePokerCreatePrompt,
+  handlePokerBuyInModal,
+  handlePokerJoin,
+  handlePokerLeave,
+  handlePokerStart,
+  handlePokerAction,
+  handlePokerRaisePrompt,
+  handlePokerRaiseModal,
+} from "../commands/poker";
 import { parseCasinoAgainButtonId } from "../commands/casino/replay";
 import { parseRouletteBet } from "../services/casino/roulette";
 import {
@@ -85,6 +98,7 @@ export type InteractionHandlerServices = {
   blackjack: BlackjackSessionService;
   hilo: HiloSessionService;
   lottery: LotteryService;
+  poker: PokerTableService;
 };
 
 export function registerInteractionHandler(
@@ -93,7 +107,7 @@ export function registerInteractionHandler(
   config: Config,
   services: InteractionHandlerServices,
 ) {
-  const { wallet, blackjack, hilo, lottery } = services;
+  const { wallet, blackjack, hilo, lottery, poker } = services;
   const claims = createClaimsService(wallet, config);
   const mines = createMinesSessionService(db, wallet, config);
   const slotsJackpot = createSlotsJackpotService(db);
@@ -197,6 +211,11 @@ export function registerInteractionHandler(
         const challengeParts = parseButtonId(interaction.customId, "challenge");
         if (challengeParts) {
           const [action, sub, ...rest] = challengeParts;
+
+          if (action === "pick" && sub === "poker") {
+            await handlePokerCreatePrompt(interaction, "private", config);
+            return;
+          }
 
           if (action === "pick" && isChallengeGame(sub!)) {
             await handleChallengePick(interaction, sub!, db, wallet, config);
@@ -313,7 +332,12 @@ export function registerInteractionHandler(
               return;
             }
             if (isCasinoGame(sub!)) {
-              await handleCasinoPick(interaction, sub!, wallet, config);
+              await handleCasinoPick(interaction, sub!, wallet, config, {
+                poker,
+                blackjack,
+                hilo,
+                mines,
+              });
               return;
             }
           }
@@ -329,7 +353,12 @@ export function registerInteractionHandler(
           }
 
           if (action === "pick" && isCasinoGame(sub!)) {
-            await handleCasinoPick(interaction, sub!, wallet, config);
+            await handleCasinoPick(interaction, sub!, wallet, config, {
+              poker,
+              blackjack,
+              hilo,
+              mines,
+            });
             return;
           }
 
@@ -386,6 +415,7 @@ export function registerInteractionHandler(
               hilo,
               mines,
               config,
+              poker,
             );
             return;
           }
@@ -521,6 +551,54 @@ export function registerInteractionHandler(
           return;
         }
 
+        const pokerParts = parseButtonId(interaction.customId, "poker");
+        if (pokerParts) {
+          const [action, sub, ...rest] = pokerParts;
+
+          if (action === "browse" && sub === interaction.user.id) {
+            await handlePokerBrowse(interaction, poker, config);
+            return;
+          }
+
+          if (action === "create" && (sub === "public" || sub === "private")) {
+            await handlePokerCreatePrompt(interaction, sub, config);
+            return;
+          }
+
+          if (action === "join" && rest[0]) {
+            await handlePokerJoin(
+              interaction,
+              rest[0],
+              poker,
+              config,
+              blackjack,
+              hilo,
+              mines,
+            );
+            return;
+          }
+
+          if (action === "leave" && sub) {
+            await handlePokerLeave(interaction, sub, poker, config);
+            return;
+          }
+
+          if (action === "start" && sub) {
+            await handlePokerStart(interaction, sub, poker, config);
+            return;
+          }
+
+          if (action === "act" && sub && rest[0]) {
+            await handlePokerAction(interaction, sub, rest[0], poker, config);
+            return;
+          }
+
+          if (action === "raise" && sub) {
+            await handlePokerRaisePrompt(interaction, sub, poker);
+            return;
+          }
+        }
+
         const pvpParts = parseButtonId(interaction.customId, "pvp");
         if (pvpParts) {
           const [action, challengeId, extra] = pvpParts;
@@ -609,6 +687,7 @@ export function registerInteractionHandler(
               hilo,
               mines,
               config,
+              poker,
             );
             return;
           }
@@ -644,6 +723,28 @@ export function registerInteractionHandler(
               lottery,
               config,
             );
+            return;
+          }
+        }
+
+        const pokerModalParts = parseButtonId(interaction.customId, "poker");
+        if (pokerModalParts) {
+          const [action, sub, ...rest] = pokerModalParts;
+          if (action === "buyinModal" && sub && rest[0]) {
+            await handlePokerBuyInModal(
+              interaction,
+              sub,
+              rest[0],
+              poker,
+              config,
+              blackjack,
+              hilo,
+              mines,
+            );
+            return;
+          }
+          if (action === "raiseModal" && sub) {
+            await handlePokerRaiseModal(interaction, sub, poker, config);
             return;
           }
         }

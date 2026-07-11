@@ -29,6 +29,12 @@ const envSchema = z.object({
   TICKET_MAX_OPEN_PER_USER: z.coerce.number().int().positive().default(3),
   TICKET_TITLE_MAX_LENGTH: z.coerce.number().int().positive().default(100),
   TICKET_BODY_MAX_LENGTH: z.coerce.number().int().positive().default(1000),
+  POKER_MIN_PLAYERS: z.coerce.number().int().positive().default(2),
+  POKER_MAX_PLAYERS: z.coerce.number().int().positive().default(6),
+  POKER_ACTION_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(60),
+  POKER_TABLE_EXPIRY_MINUTES: z.coerce.number().int().positive().default(30),
+  POKER_DEFAULT_SMALL_BLIND: z.coerce.number().int().positive().optional(),
+  POKER_DEFAULT_BIG_BLIND: z.coerce.number().int().positive().optional(),
 });
 
 export type Config = z.infer<typeof envSchema>;
