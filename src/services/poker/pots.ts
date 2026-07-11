@@ -56,3 +56,27 @@ export function splitPot(amount: number, winnerSeatIndices: number[]): Map<numbe
 
   return payouts;
 }
+
+export type WinnerRecord = {
+  seatIndex: number;
+  amount: number;
+  handLabel?: string;
+};
+
+/** Combine multiple pot wins for the same seat into one display line. */
+export function aggregateWinnersBySeat(records: WinnerRecord[]): WinnerRecord[] {
+  const bySeat = new Map<number, WinnerRecord>();
+
+  for (const record of records) {
+    const existing = bySeat.get(record.seatIndex);
+    if (existing) {
+      existing.amount += record.amount;
+    } else {
+      bySeat.set(record.seatIndex, { ...record });
+    }
+  }
+
+  return [...bySeat.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([, record]) => record);
+}

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { compareHands, evaluateBestHand } from "./handRank";
-import { calculatePots, splitPot } from "./pots";
+import { calculatePots, splitPot, aggregateWinnersBySeat } from "./pots";
 import {
   applyAction,
   getLegalActions,
@@ -94,6 +94,18 @@ describe("pots", () => {
     const payouts = splitPot(101, [2, 5]);
     expect(payouts.get(2)).toBe(51);
     expect(payouts.get(5)).toBe(50);
+  });
+
+  test("aggregateWinnersBySeat merges multiple pots for one player", () => {
+    const merged = aggregateWinnersBySeat([
+      { seatIndex: 0, amount: 40, handLabel: "Three of a Kind (2s)" },
+      { seatIndex: 0, amount: 180, handLabel: "Three of a Kind (2s)" },
+      { seatIndex: 2, amount: 50, handLabel: "Pair" },
+    ]);
+    expect(merged).toEqual([
+      { seatIndex: 0, amount: 220, handLabel: "Three of a Kind (2s)" },
+      { seatIndex: 2, amount: 50, handLabel: "Pair" },
+    ]);
   });
 });
 

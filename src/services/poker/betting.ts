@@ -1,7 +1,7 @@
 import type { Card } from "../blackjack/engine";
 import { burnCard, createDeck, dealCards, shuffleDeck } from "./engine";
 import { compareHands, evaluateBestHand } from "./handRank";
-import { calculatePots, splitPot } from "./pots";
+import { calculatePots, splitPot, aggregateWinnersBySeat } from "./pots";
 import type {
   HandState,
   LegalActions,
@@ -446,7 +446,7 @@ export function resolveHand(table: TableSnapshot): TableSnapshot {
       }
     }
 
-    hand.winners = winnerRecords;
+    hand.winners = aggregateWinnersBySeat(winnerRecords);
   }
 
   for (const [seatIdx, amount] of payouts) {
