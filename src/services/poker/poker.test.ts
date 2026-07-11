@@ -8,7 +8,7 @@ import {
   startHand,
 } from "./betting";
 import { isBotUserId } from "./bots";
-import { parseTableBuyIn, pokerTableStakes } from "./config";
+import { parseTableBuyIn, pokerTableStakes, parseBotCount } from "./config";
 import type { SeatSnapshot, TableSnapshot } from "./types";
 
 function makeTable(seats: Partial<SeatSnapshot>[]): TableSnapshot {
@@ -114,6 +114,15 @@ describe("poker config", () => {
   test("parseTableBuyIn accepts any amount in table range", () => {
     expect(parseTableBuyIn("850", 800, 1200, config)).toBe(850);
     expect(() => parseTableBuyIn("700", 800, 1200, config)).toThrow();
+  });
+
+  test("parseBotCount accepts 0 through table max", () => {
+    expect(parseBotCount(undefined, 6)).toBe(0);
+    expect(parseBotCount("0", 6)).toBe(0);
+    expect(parseBotCount("3", 6)).toBe(3);
+    expect(parseBotCount("5", 6)).toBe(5);
+    expect(() => parseBotCount("6", 6)).toThrow();
+    expect(() => parseBotCount("-1", 6)).toThrow();
   });
 });
 

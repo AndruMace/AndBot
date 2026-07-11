@@ -37,7 +37,7 @@ export async function handleHelp(
           "**Plinko** — Drop the chip; land in buckets up to 5x",
           "**Keno** — Pick 1–10 numbers; 20 drawn from 80; up to 10,000x",
           "**Roulette** — Red, Black, Odd, Even, or 0 (~97% RTP)",
-          "**Poker** — No-Limit Texas Hold'em (2–6 players). Create a table with your buy-in; blinds scale from that. Optional bots fill empty seats.",
+          "**Poker** — No-Limit Texas Hold'em (2–6 players). Create a table with your buy-in; blinds scale from that. Optionally add bots — real players can join anytime to replace them.",
           "**Lottery** — Buy tickets from the casino menu",
           "`/coinflip` and `/blackjack` also work as direct commands",
         ].join("\n"),

@@ -2,15 +2,13 @@ import {
   type ButtonInteraction,
   type ModalSubmitInteraction,
   type TextChannel,
-  EmbedBuilder,
 } from "discord.js";
 import type { Config } from "../../config";
 import { PokerTableError } from "../../services/poker/table";
 import type { PokerTableService } from "../../services/poker/table";
 import { pokerLock } from "../../services/poker/lock";
-import { defaultHostBuyIn, parseTableBuyIn, pokerTableStakes } from "../../services/poker/config";
-import { runPendingBotActions } from "../../services/poker/botRunner";
-import { isBotUserId } from "../../services/poker/bots";
+import { defaultHostBuyIn, maxBotSeatsForTable, parseBotCount, parseTableBuyIn, pokerTableStakes } from "../../services/poker/config";
+import { runPendingBotActions, formatBotActionLabel } from "../../services/poker/botRunner";
 import { getLegalActions } from "../../services/poker/betting";
 import { assertGuild } from "../../utils/permissions";
 import { parseWagerAmount } from "../casino/types";
@@ -19,8 +17,9 @@ import {
   buildPokerBrowseEmbed,
   buildPokerLobbyEmbed,
   buildPokerTableEmbed,
-  buildHoleCardsEmbed,
 } from "./embeds";
+import { upsertHoleCardsEphemeral, forgetHoleCardsEphemeral } from "./holeCardsEphemeral";
+import { editPokerTableMessage } from "./tableMessage";
 import {
   pokerBrowseRow,
   pokerBuyInModal,
@@ -28,8 +27,6 @@ import {
   pokerRaiseModal,
   pokerTableComponents,
 } from "./components";
-import { formatCard } from "../../services/poker/engine";
-import type { PokerTableVisibility } from "../../services/poker/types";
 import {
   assertNoActiveCasinoSession,
 } from "../../services/casino/activeSession";
@@ -37,6 +34,7 @@ import type { BlackjackSessionService } from "../../services/blackjack/session";
 import type { HiloSessionService } from "../../services/casino/hilo/session";
 import type { MinesSessionService } from "../../services/casino/mines/session";
 import { deferAndEditPublicMessage } from "../../services/casino/lock";
+import type { PokerTableVisibility } from "../../services/poker/types";
 
 async function replyPokerError(interaction: ButtonInteraction | ModalSubmitInteraction, err: unknown) {
   const message =
@@ -52,50 +50,67 @@ async function replyPokerError(interaction: ButtonInteraction | ModalSubmitInter
   }
 }
 
-async function updateTableMessage(
-  interaction: ButtonInteraction,
+async function syncViewerHoleCards(
+  interaction: ButtonInteraction | ModalSubmitInteraction,
   tableId: string,
   poker: PokerTableService,
-  config: Config,
   viewerUserId: string,
 ) {
   const snapshot = await poker.getSnapshot(tableId);
   if (!snapshot) return;
 
-  const channel = interaction.channel;
-  if (!channel?.isTextBased()) return;
-
-  const embed = buildPokerTableEmbed(snapshot, config);
-  const components = pokerTableComponents(snapshot, viewerUserId);
-
-  const loaded = await poker.getTable(tableId);
-  if (loaded?.table.messageId) {
-    try {
-      const msg = await (channel as TextChannel).messages.fetch(loaded.table.messageId);
-      await msg.edit({ embeds: [embed], components });
-    } catch {
-      // message may be gone
-    }
-  }
-
   const viewerSeat = snapshot.seats.find((s) => s.userId === viewerUserId);
-  if (viewerSeat && viewerSeat.holeCards.length > 0 && snapshot.handState?.street !== "complete") {
-    const holeEmbed = new EmbedBuilder()
-      .setColor(0x3498db)
-      .setTitle("Your Hole Cards")
-      .setDescription(viewerSeat.holeCards.map(formatCard).join(" "));
-    await interaction.followUp({ embeds: [holeEmbed], ephemeral: true });
-  }
+  const handActive = !!snapshot.handState && snapshot.handState.street !== "complete";
+  const cards = handActive ? (viewerSeat?.holeCards ?? []) : [];
+
+  await upsertHoleCardsEphemeral(
+    interaction,
+    tableId,
+    viewerUserId,
+    cards,
+    handActive && cards.length > 0,
+  );
 }
 
-async function finalizeTableTurn(
-  interaction: ButtonInteraction,
+async function updateTableMessage(
+  interaction: ButtonInteraction | ModalSubmitInteraction,
   tableId: string,
   poker: PokerTableService,
   config: Config,
   viewerUserId: string,
 ) {
-  await runPendingBotActions(tableId, poker);
+  await editPokerTableMessage(interaction.client, poker, tableId, config, viewerUserId);
+  await syncViewerHoleCards(interaction, tableId, poker, viewerUserId);
+}
+
+async function finalizeTableTurn(
+  interaction: ButtonInteraction | ModalSubmitInteraction,
+  tableId: string,
+  poker: PokerTableService,
+  config: Config,
+  viewerUserId: string,
+) {
+  await runPendingBotActions(tableId, poker, {
+    onStep: async (step) => {
+      const extras =
+        step.phase === "thinking"
+          ? { thinkingSeat: step.seatIndex }
+          : {
+              lastAction: {
+                seatIndex: step.seatIndex,
+                label: step.action ? formatBotActionLabel(step.action, step.raiseTo) : "acts",
+              },
+            };
+      await editPokerTableMessage(
+        interaction.client,
+        poker,
+        tableId,
+        config,
+        viewerUserId,
+        extras,
+      );
+    },
+  });
   await updateTableMessage(interaction, tableId, poker, config, viewerUserId);
 }
 
@@ -142,9 +157,11 @@ export async function handlePokerCreatePrompt(
   config: Config,
 ) {
   const suggested = defaultHostBuyIn(config);
+  const maxBots = maxBotSeatsForTable(config.POKER_MAX_PLAYERS);
   await interaction.showModal(
     pokerBuyInModal(visibility, interaction.user.id, suggested, undefined, {
       showBotsField: true,
+      maxBots,
       buyInHint: "Table buy-in (sets blinds & limits)",
     }),
   );
@@ -173,16 +190,17 @@ export async function handlePokerBuyInModal(
   }
 
   try {
-    const fillWithBots =
-      !source.startsWith("join:") &&
-      (() => {
-        try {
-          const raw = interaction.fields.getTextInputValue("bots").trim().toLowerCase();
-          return raw === "yes" || raw === "y";
-        } catch {
-          return false;
-        }
-      })();
+    const maxSeats = config.POKER_MAX_PLAYERS;
+    let botCount = 0;
+    if (!source.startsWith("join:")) {
+      let botsRaw: string | undefined;
+      try {
+        botsRaw = interaction.fields.getTextInputValue("bots");
+      } catch {
+        botsRaw = undefined;
+      }
+      botCount = parseBotCount(botsRaw, maxSeats);
+    }
 
     await assertNoActiveCasinoSession(guildId, userId, blackjack, hilo, mines, undefined, poker);
 
@@ -202,13 +220,7 @@ export async function handlePokerBuyInModal(
 
       await interaction.deferUpdate();
       await pokerLock.run(tableId, () => poker.joinTable(tableId, userId, amount));
-      await finalizeTableTurn(
-        interaction as unknown as ButtonInteraction,
-        tableId,
-        poker,
-        config,
-        userId,
-      );
+      await finalizeTableTurn(interaction, tableId, poker, config, userId);
       await interaction.followUp({
         content: `Joined table with **${formatCurrency(amount, config)}** buy-in.`,
         ephemeral: true,
@@ -223,7 +235,7 @@ export async function handlePokerBuyInModal(
     const { table } = await poker.createTable(guildId, channelId, userId, {
       visibility,
       buyIn: amount,
-      fillWithBots,
+      botCount,
     });
 
     const snapshot = await poker.getSnapshot(table.id);
@@ -235,7 +247,10 @@ export async function handlePokerBuyInModal(
     const message = await channel.send({ embeds: [embed], components });
     await poker.setMessageId(table.id, message.id);
 
-    const botNote = fillWithBots ? " Bots filled empty seats." : "";
+    const botNote =
+      botCount > 0
+        ? ` **${botCount}** bot${botCount === 1 ? "" : "s"} added — real players can join anytime to take their seats.`
+        : "";
     await interaction.reply({
       content:
         `Table created! Blinds **${formatCurrency(stakes.smallBlind, config)}** / **${formatCurrency(stakes.bigBlind, config)}** · ` +
@@ -313,6 +328,7 @@ export async function handlePokerLeave(
       poker.leaveTable(tableId, interaction.user.id),
     );
     await updateTableMessage(interaction, tableId, poker, config, interaction.user.id);
+    forgetHoleCardsEphemeral(tableId, interaction.user.id);
     await interaction.followUp({
       content: snapshot.status === "closed" ? "You left — table closed." : "You left the table.",
       ephemeral: true,
@@ -330,7 +346,7 @@ export async function handlePokerStart(
 ) {
   try {
     await deferAndEditPublicMessage(interaction, { components: [] });
-    const snapshot = await pokerLock.run(tableId, async () => {
+    await pokerLock.run(tableId, async () => {
       const current = await poker.getSnapshot(tableId);
       if (current?.handState?.street === "complete") {
         return poker.beginNextHand(tableId, interaction.user.id);
@@ -338,23 +354,6 @@ export async function handlePokerStart(
       return poker.startHand(tableId, interaction.user.id);
     });
     await finalizeTableTurn(interaction, tableId, poker, config, interaction.user.id);
-
-    for (const seat of snapshot.seats) {
-      if (!seat.userId || seat.holeCards.length === 0 || isBotUserId(seat.userId)) continue;
-      try {
-        const user = await interaction.client.users.fetch(seat.userId);
-        await user.send({
-          embeds: [
-            new EmbedBuilder()
-              .setColor(0x3498db)
-              .setTitle("Your Hole Cards")
-              .setDescription(seat.holeCards.map(formatCard).join(" ")),
-          ],
-        });
-      } catch {
-        // DMs closed — they'll use ephemeral on action
-      }
-    }
   } catch (err) {
     await replyPokerError(interaction, err);
   }
@@ -418,7 +417,7 @@ export async function handlePokerRaiseModal(
       poker.act(tableId, interaction.user.id, "raise", amount),
     );
     await finalizeTableTurn(
-      interaction as unknown as ButtonInteraction,
+      interaction,
       tableId,
       poker,
       config,

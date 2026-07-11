@@ -63,6 +63,24 @@ export function parseTableBuyIn(
   return amount;
 }
 
+/** Max bots a host can request when creating a table. */
+export const MAX_TABLE_BOTS = 6;
+
+export function maxBotSeatsForTable(maxSeats: number): number {
+  return Math.min(MAX_TABLE_BOTS, Math.max(0, maxSeats - 1));
+}
+
+export function parseBotCount(raw: string | undefined, maxSeats: number): number {
+  const maxBots = maxBotSeatsForTable(maxSeats);
+  if (!raw?.trim()) return 0;
+
+  const count = Number.parseInt(raw.trim(), 10);
+  if (Number.isNaN(count) || count < 0 || count > maxBots) {
+    throw new BetValidationError(`Bot count must be between 0 and ${maxBots}.`);
+  }
+  return count;
+}
+
 /** Default suggested buy-in when browsing/creating (global fallback). */
 export function defaultHostBuyIn(config: Config): number {
   return roundPokerChips(Math.min(config.MAX_BET, Math.max(config.MIN_BET * 100, 500)), config);

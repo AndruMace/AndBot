@@ -155,11 +155,13 @@ export function pokerBuyInModal(
   userId: string,
   defaultBuyIn: number,
   tableId?: string,
-  options?: { showBotsField?: boolean; buyInHint?: string },
+  options?: { showBotsField?: boolean; buyInHint?: string; maxBots?: number },
 ) {
   const customId = tableId
     ? buildButtonId("poker", "buyinModal", source, tableId, userId)
     : buildButtonId("poker", "buyinModal", source, userId);
+
+  const maxBots = options?.maxBots ?? 5;
 
   const rows = [
     new ActionRowBuilder<TextInputBuilder>().addComponents(
@@ -177,11 +179,12 @@ export function pokerBuyInModal(
       new ActionRowBuilder<TextInputBuilder>().addComponents(
         new TextInputBuilder()
           .setCustomId("bots")
-          .setLabel("Fill with bots? (yes/no)")
+          .setLabel("Bot count (players replace them)")
           .setStyle(TextInputStyle.Short)
-          .setValue("no")
+          .setValue("0")
           .setRequired(false)
-          .setMaxLength(3),
+          .setMaxLength(1)
+          .setPlaceholder(`0–${maxBots}`),
       ),
     );
   }
@@ -209,15 +212,19 @@ export function formatSeatLine(
   snapshot: TableSnapshot,
   seatIndex: number,
   config: Config,
+  extras?: import("./embeds").TableEmbedExtras,
 ): string {
   const seat = snapshot.seats[seatIndex];
   if (!seat) return `Seat ${seatIndex + 1}: Empty`;
   if (!seat.userId) return `Seat ${seatIndex + 1}: Empty`;
 
-  const marker =
-    snapshot.handState?.dealerSeat === seatIndex
+  const isThinking = extras?.thinkingSeat === seatIndex;
+  const isActing = snapshot.handState?.actionSeat === seatIndex;
+  const marker = isThinking
+    ? " 💭"
+    : snapshot.handState?.dealerSeat === seatIndex
       ? " (D)"
-      : snapshot.handState?.actionSeat === seatIndex
+      : isActing
         ? " ←"
         : "";
   const status =

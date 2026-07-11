@@ -32,7 +32,7 @@ export type CreateTableOptions = {
   visibility: PokerTableVisibility;
   buyIn: number;
   maxSeats?: number;
-  fillWithBots?: boolean;
+  botCount?: number;
 };
 
 export class PokerTableService {
@@ -96,9 +96,13 @@ export class PokerTableService {
         })
         .where(eq(pokerSeats.id, hostSeat.id));
 
-      if (options.fillWithBots) {
-        for (const seat of seats) {
-          if (seat.id === hostSeat.id) continue;
+      const botCount = Math.min(
+        Math.max(0, options.botCount ?? 0),
+        maxSeats - 1,
+      );
+      if (botCount > 0) {
+        const botSeats = seats.filter((s) => s.id !== hostSeat.id).slice(0, botCount);
+        for (const seat of botSeats) {
           await tx
             .update(pokerSeats)
             .set({
