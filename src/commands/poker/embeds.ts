@@ -3,13 +3,14 @@ import type { Config } from "../../config";
 import type { TableSnapshot } from "../../services/poker/types";
 import { formatBoard, formatPotLine, formatSeatLine } from "./components";
 import { formatCurrency } from "../../utils/bets";
+import { formatPokerActor } from "../../services/poker/bots";
 
 export function buildPokerLobbyEmbed(config: Config): EmbedBuilder {
   return new EmbedBuilder()
     .setColor(0x2ecc71)
     .setTitle("Texas Hold'em Poker")
     .setDescription(
-      "No-Limit Hold'em for 2–6 players.\n\nBrowse open tables or create your own. Buy in with chips, play hands, cash out when you leave.",
+      "No-Limit Hold'em for 2–6 players.\n\nBrowse open tables or create your own. Set the buy-in when creating a table — blinds and join limits are based on that amount.",
     )
     .setFooter({
       text: `Blinds from ${formatCurrency(config.MIN_BET, config)} / ${formatCurrency(Math.min(config.MIN_BET * 2, config.MAX_BET), config)}`,
@@ -40,7 +41,7 @@ export function buildPokerTableEmbed(
     );
     if (hand.actionSeat != null) {
       const actor = snapshot.seats[hand.actionSeat];
-      if (actor?.userId) lines.push(`Waiting for <@${actor.userId}> to act…`);
+      if (actor?.userId) lines.push(`Waiting for ${formatPokerActor(actor.userId)} to act…`);
     }
   } else if (hand?.street === "complete") {
     lines.push("", `**Hand #${snapshot.handNumber} complete**`);
@@ -49,7 +50,7 @@ export function buildPokerTableEmbed(
       const user = snapshot.seats[winner.seatIndex]?.userId;
       if (user) {
         lines.push(
-          `<@${user}> wins **${formatCurrency(winner.amount, config)}**${winner.handLabel ? ` (${winner.handLabel})` : ""}`,
+          `${formatPokerActor(user)} wins **${formatCurrency(winner.amount, config)}**${winner.handLabel ? ` (${winner.handLabel})` : ""}`,
         );
       }
     }

@@ -8,7 +8,9 @@ import type { Config } from "../../config";
 import { PokerTableError } from "../../services/poker/table";
 import type { PokerTableService } from "../../services/poker/table";
 import { pokerLock } from "../../services/poker/lock";
-import { pokerBuyInRange } from "../../services/poker/config";
+import { defaultHostBuyIn, parseTableBuyIn, pokerTableStakes } from "../../services/poker/config";
+import { runPendingBotActions } from "../../services/poker/botRunner";
+import { isBotUserId } from "../../services/poker/bots";
 import { getLegalActions } from "../../services/poker/betting";
 import { assertGuild } from "../../utils/permissions";
 import { parseWagerAmount } from "../casino/types";
@@ -86,6 +88,17 @@ async function updateTableMessage(
   }
 }
 
+async function finalizeTableTurn(
+  interaction: ButtonInteraction,
+  tableId: string,
+  poker: PokerTableService,
+  config: Config,
+  viewerUserId: string,
+) {
+  await runPendingBotActions(tableId, poker);
+  await updateTableMessage(interaction, tableId, poker, config, viewerUserId);
+}
+
 export async function handlePokerLobby(
   interaction: ButtonInteraction,
   config: Config,
@@ -128,8 +141,13 @@ export async function handlePokerCreatePrompt(
   visibility: PokerTableVisibility,
   config: Config,
 ) {
-  const { minBuyIn } = pokerBuyInRange(config);
-  await interaction.showModal(pokerBuyInModal(visibility, interaction.user.id, minBuyIn));
+  const suggested = defaultHostBuyIn(config);
+  await interaction.showModal(
+    pokerBuyInModal(visibility, interaction.user.id, suggested, undefined, {
+      showBotsField: true,
+      buyInHint: "Table buy-in (sets blinds & limits)",
+    }),
+  );
 }
 
 export async function handlePokerBuyInModal(
@@ -155,7 +173,17 @@ export async function handlePokerBuyInModal(
   }
 
   try {
-    const amount = parseWagerAmount(interaction.fields.getTextInputValue("amount"), config);
+    const fillWithBots =
+      !source.startsWith("join:") &&
+      (() => {
+        try {
+          const raw = interaction.fields.getTextInputValue("bots").trim().toLowerCase();
+          return raw === "yes" || raw === "y";
+        } catch {
+          return false;
+        }
+      })();
+
     await assertNoActiveCasinoSession(guildId, userId, blackjack, hilo, mines, undefined, poker);
 
     const activePoker = await poker.getActiveSeatForUser(guildId, userId);
@@ -163,9 +191,18 @@ export async function handlePokerBuyInModal(
 
     if (source.startsWith("join:")) {
       const tableId = source.slice("join:".length);
+      const loaded = await poker.getTable(tableId);
+      if (!loaded) throw new PokerTableError("Table not found.");
+      const amount = parseTableBuyIn(
+        interaction.fields.getTextInputValue("amount"),
+        loaded.table.minBuyIn,
+        loaded.table.maxBuyIn,
+        config,
+      );
+
       await interaction.deferUpdate();
       await pokerLock.run(tableId, () => poker.joinTable(tableId, userId, amount));
-      await updateTableMessage(
+      await finalizeTableTurn(
         interaction as unknown as ButtonInteraction,
         tableId,
         poker,
@@ -179,10 +216,14 @@ export async function handlePokerBuyInModal(
       return;
     }
 
+    const amount = parseWagerAmount(interaction.fields.getTextInputValue("amount"), config);
+    const stakes = pokerTableStakes(amount, config);
+
     const visibility = source as PokerTableVisibility;
     const { table } = await poker.createTable(guildId, channelId, userId, {
       visibility,
       buyIn: amount,
+      fillWithBots,
     });
 
     const snapshot = await poker.getSnapshot(table.id);
@@ -194,8 +235,11 @@ export async function handlePokerBuyInModal(
     const message = await channel.send({ embeds: [embed], components });
     await poker.setMessageId(table.id, message.id);
 
+    const botNote = fillWithBots ? " Bots filled empty seats." : "";
     await interaction.reply({
-      content: `Table created! Blinds **${formatCurrency(snapshot.smallBlind, config)}** / **${formatCurrency(snapshot.bigBlind, config)}**.`,
+      content:
+        `Table created! Blinds **${formatCurrency(stakes.smallBlind, config)}** / **${formatCurrency(stakes.bigBlind, config)}** · ` +
+        `join range **${formatCurrency(stakes.minBuyIn, config)}**–**${formatCurrency(stakes.maxBuyIn, config)}**.${botNote}`,
       ephemeral: true,
     });
   } catch (err) {
@@ -224,9 +268,11 @@ export async function handlePokerJoin(
     await assertNoActiveCasinoSession(guildId, interaction.user.id, blackjack, hilo, mines, undefined, poker);
     const loaded = await poker.getTable(tableId);
     if (!loaded) throw new PokerTableError("Table not found.");
-    const { minBuyIn } = pokerBuyInRange(config);
+    const midBuyIn = Math.round((loaded.table.minBuyIn + loaded.table.maxBuyIn) / 2);
     await interaction.showModal(
-      pokerBuyInModal("join", interaction.user.id, Math.max(minBuyIn, loaded.table.minBuyIn), tableId),
+      pokerBuyInModal("join", interaction.user.id, midBuyIn, tableId, {
+        buyInHint: `Buy-in (${loaded.table.minBuyIn}–${loaded.table.maxBuyIn})`,
+      }),
     );
   } catch (err) {
     await replyPokerError(interaction, err);
@@ -291,10 +337,10 @@ export async function handlePokerStart(
       }
       return poker.startHand(tableId, interaction.user.id);
     });
-    await updateTableMessage(interaction, tableId, poker, config, interaction.user.id);
+    await finalizeTableTurn(interaction, tableId, poker, config, interaction.user.id);
 
     for (const seat of snapshot.seats) {
-      if (!seat.userId || seat.holeCards.length === 0) continue;
+      if (!seat.userId || seat.holeCards.length === 0 || isBotUserId(seat.userId)) continue;
       try {
         const user = await interaction.client.users.fetch(seat.userId);
         await user.send({
@@ -323,10 +369,10 @@ export async function handlePokerAction(
 ) {
   try {
     await deferAndEditPublicMessage(interaction, { components: [] });
-    const snapshot = await pokerLock.run(tableId, () =>
+    await pokerLock.run(tableId, () =>
       poker.act(tableId, interaction.user.id, action as "fold" | "check" | "call" | "all_in"),
     );
-    await updateTableMessage(interaction, tableId, poker, config, interaction.user.id);
+    await finalizeTableTurn(interaction, tableId, poker, config, interaction.user.id);
   } catch (err) {
     await replyPokerError(interaction, err);
   }
@@ -371,7 +417,13 @@ export async function handlePokerRaiseModal(
     await pokerLock.run(tableId, () =>
       poker.act(tableId, interaction.user.id, "raise", amount),
     );
-    await updateTableMessage(interaction as unknown as ButtonInteraction, tableId, poker, config, interaction.user.id);
+    await finalizeTableTurn(
+      interaction as unknown as ButtonInteraction,
+      tableId,
+      poker,
+      config,
+      interaction.user.id,
+    );
   } catch (err) {
     await replyPokerError(interaction, err);
   }

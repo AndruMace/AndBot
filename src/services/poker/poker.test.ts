@@ -7,6 +7,8 @@ import {
   nextDealerSeat,
   startHand,
 } from "./betting";
+import { isBotUserId } from "./bots";
+import { parseTableBuyIn, pokerTableStakes } from "./config";
 import type { SeatSnapshot, TableSnapshot } from "./types";
 
 function makeTable(seats: Partial<SeatSnapshot>[]): TableSnapshot {
@@ -92,6 +94,33 @@ describe("pots", () => {
     const payouts = splitPot(101, [2, 5]);
     expect(payouts.get(2)).toBe(51);
     expect(payouts.get(5)).toBe(50);
+  });
+});
+
+describe("poker config", () => {
+  const config = {
+    MIN_BET: 1,
+    MAX_BET: 100_000,
+  } as import("../../config").Config;
+
+  test("stakes scale from host buy-in", () => {
+    const stakes = pokerTableStakes(1000, config);
+    expect(stakes.minBuyIn).toBeLessThan(1000);
+    expect(stakes.maxBuyIn).toBeGreaterThan(1000);
+    expect(stakes.bigBlind).toBeGreaterThanOrEqual(stakes.smallBlind);
+    expect(stakes.bigBlind).toBeLessThanOrEqual(100);
+  });
+
+  test("parseTableBuyIn accepts any amount in table range", () => {
+    expect(parseTableBuyIn("850", 800, 1200, config)).toBe(850);
+    expect(() => parseTableBuyIn("700", 800, 1200, config)).toThrow();
+  });
+});
+
+describe("poker bots", () => {
+  test("bot user ids are detectable", () => {
+    expect(isBotUserId("bot:abc:2")).toBe(true);
+    expect(isBotUserId("123456")).toBe(false);
   });
 });
 

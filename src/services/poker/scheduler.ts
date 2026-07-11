@@ -1,13 +1,17 @@
 import type { PokerTableService } from "./table";
+import { runPendingBotActions } from "./botRunner";
 
 export function startPokerScheduler(poker: PokerTableService) {
   const tick = async () => {
     try {
       const expired = await poker.sweepExpiredTables();
-      const timeouts = await poker.sweepActionTimeouts();
-      if (expired > 0 || timeouts > 0) {
+      const timedOutTables = await poker.sweepActionTimeouts();
+      for (const tableId of timedOutTables) {
+        await runPendingBotActions(tableId, poker);
+      }
+      if (expired > 0 || timedOutTables.length > 0) {
         console.log(
-          `Poker maintenance: closed ${expired} table(s), auto-folded ${timeouts} timed-out action(s).`,
+          `Poker maintenance: closed ${expired} table(s), auto-folded ${timedOutTables.length} timed-out action(s).`,
         );
       }
     } catch (err) {

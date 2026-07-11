@@ -13,6 +13,7 @@ import { getLegalActions } from "../../services/poker/betting";
 import type { TableSnapshot } from "../../services/poker/types";
 import { totalPotAmount } from "../../services/poker/pots";
 import { formatCard } from "../../services/poker/engine";
+import { formatPokerActor, isBotUserId } from "../../services/poker/bots";
 
 export function pokerLobbyRow(userId: string): ActionRowBuilder<ButtonBuilder> {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -154,24 +155,41 @@ export function pokerBuyInModal(
   userId: string,
   defaultBuyIn: number,
   tableId?: string,
+  options?: { showBotsField?: boolean; buyInHint?: string },
 ) {
   const customId = tableId
     ? buildButtonId("poker", "buyinModal", source, tableId, userId)
     : buildButtonId("poker", "buyinModal", source, userId);
 
+  const rows = [
+    new ActionRowBuilder<TextInputBuilder>().addComponents(
+      new TextInputBuilder()
+        .setCustomId("amount")
+        .setLabel(options?.buyInHint ?? "Your buy-in amount")
+        .setStyle(TextInputStyle.Short)
+        .setValue(String(defaultBuyIn))
+        .setRequired(true),
+    ),
+  ];
+
+  if (options?.showBotsField) {
+    rows.push(
+      new ActionRowBuilder<TextInputBuilder>().addComponents(
+        new TextInputBuilder()
+          .setCustomId("bots")
+          .setLabel("Fill with bots? (yes/no)")
+          .setStyle(TextInputStyle.Short)
+          .setValue("no")
+          .setRequired(false)
+          .setMaxLength(3),
+      ),
+    );
+  }
+
   return new ModalBuilder()
     .setCustomId(customId)
     .setTitle("Poker Buy-In")
-    .addComponents(
-      new ActionRowBuilder<TextInputBuilder>().addComponents(
-        new TextInputBuilder()
-          .setCustomId("amount")
-          .setLabel("Buy-in amount")
-          .setStyle(TextInputStyle.Short)
-          .setValue(String(defaultBuyIn))
-          .setRequired(true),
-      ),
-    );
+    .addComponents(...rows);
 }
 
 export function formatBoard(cards: string[]): string {
@@ -204,5 +222,6 @@ export function formatSeatLine(
         : "";
   const status =
     seat.status === "folded" ? " · folded" : seat.status === "all_in" ? " · all-in" : "";
-  return `Seat ${seatIndex + 1}: <@${seat.userId}> — **${formatCurrency(seat.stack, config)}**${marker}${status}`;
+  const label = isBotUserId(seat.userId) ? formatPokerActor(seat.userId) : `<@${seat.userId}>`;
+  return `Seat ${seatIndex + 1}: ${label} — **${formatCurrency(seat.stack, config)}**${marker}${status}`;
 }

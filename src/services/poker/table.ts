@@ -15,7 +15,9 @@ import {
   seatedPlayers,
   startHand as engineStartHand,
 } from "./betting";
-import { pokerBuyInRange, pokerBlinds } from "./config";
+import { pokerTableStakes } from "./config";
+import { isBotUserId, makeBotUserId } from "./bots";
+import { validateBetAmount } from "../../utils/bets";
 import { toTableSnapshot } from "./snapshot";
 import type { HandState, PokerAction, PokerTableVisibility, TableSnapshot } from "./types";
 
@@ -30,6 +32,7 @@ export type CreateTableOptions = {
   visibility: PokerTableVisibility;
   buyIn: number;
   maxSeats?: number;
+  fillWithBots?: boolean;
 };
 
 export class PokerTableService {
@@ -49,19 +52,14 @@ export class PokerTableService {
       Math.max(options.maxSeats ?? this.config.POKER_MAX_PLAYERS, this.config.POKER_MIN_PLAYERS),
       this.config.POKER_MAX_PLAYERS,
     );
-    const { minBuyIn, maxBuyIn } = pokerBuyInRange(this.config);
-    if (options.buyIn < minBuyIn || options.buyIn > maxBuyIn) {
-      throw new PokerTableError(
-        `Buy-in must be between ${minBuyIn} and ${maxBuyIn}.`,
-      );
-    }
+    validateBetAmount(options.buyIn, this.config);
 
     const existing = await this.getActiveSeatForUser(guildId, hostUserId);
     if (existing) {
       throw new PokerTableError("You are already seated at a poker table.");
     }
 
-    const { smallBlind, bigBlind } = pokerBlinds(this.config);
+    const { smallBlind, bigBlind, minBuyIn, maxBuyIn } = pokerTableStakes(options.buyIn, this.config);
 
     return this.db.transaction(async (tx) => {
       const [table] = await tx
@@ -97,6 +95,21 @@ export class PokerTableService {
           status: "seated",
         })
         .where(eq(pokerSeats.id, hostSeat.id));
+
+      if (options.fillWithBots) {
+        for (const seat of seats) {
+          if (seat.id === hostSeat.id) continue;
+          await tx
+            .update(pokerSeats)
+            .set({
+              userId: makeBotUserId(table!.id, seat.seatIndex),
+              stack: options.buyIn,
+              status: "seated",
+              holeCards: [],
+            })
+            .where(eq(pokerSeats.id, seat.id));
+        }
+      }
 
       const refreshed = await this.loadTable(tx, table!.id);
       return refreshed;
@@ -152,7 +165,9 @@ export class PokerTableService {
         throw new PokerTableError("You are already seated at another poker table.");
       }
 
-      const openSeat = loaded.seats.find((s) => !s.userId);
+      const openSeat =
+        loaded.seats.find((s) => !s.userId) ??
+        loaded.seats.find((s) => s.userId && isBotUserId(s.userId));
       if (!openSeat) throw new PokerTableError("Table is full.");
 
       await this.wallet.debit(snapshot.guildId, userId, buyIn, "poker_buyin", tableId, undefined, tx);
@@ -180,7 +195,7 @@ export class PokerTableService {
         throw new PokerTableError("Cannot leave during an active hand. Fold or wait for the hand to end.");
       }
 
-      if (seat.stack > 0) {
+      if (seat.stack > 0 && !isBotUserId(seat.userId)) {
         await this.wallet.credit(
           loaded.table.guildId,
           userId,
@@ -197,7 +212,9 @@ export class PokerTableService {
         .set({ userId: null, stack: 0, status: "empty", holeCards: [] })
         .where(eq(pokerSeats.id, seat.id));
 
-      const remaining = loaded.seats.filter((s) => s.userId && s.id !== seat.id);
+      const remaining = loaded.seats.filter(
+        (s) => s.userId && s.id !== seat.id && !isBotUserId(s.userId),
+      );
       if (remaining.length === 0) {
         await tx.update(pokerTables).set({ status: "closed" }).where(eq(pokerTables.id, tableId));
       }
@@ -339,14 +356,14 @@ export class PokerTableService {
     return closed;
   }
 
-  async sweepActionTimeouts(limit = 20): Promise<number> {
+  async sweepActionTimeouts(limit = 20): Promise<string[]> {
     const tables = await this.db
       .select()
       .from(pokerTables)
       .where(eq(pokerTables.status, "playing"))
       .limit(limit);
 
-    let folded = 0;
+    const actedTableIds: string[] = [];
     for (const table of tables) {
       const hand = table.handState as HandState | null;
       if (!hand?.actionDeadlineAt || !hand.actionSeat) continue;
@@ -363,19 +380,19 @@ export class PokerTableService {
 
       try {
         await this.act(table.id, actor, "fold");
-        folded++;
+        actedTableIds.push(table.id);
       } catch {
         // ignore
       }
     }
-    return folded;
+    return actedTableIds;
   }
 
   async closeTable(tableId: string): Promise<void> {
     await this.db.transaction(async (tx) => {
       const loaded = await this.lockTable(tx, tableId);
       for (const seat of loaded.seats) {
-        if (seat.userId && seat.stack > 0) {
+        if (seat.userId && seat.stack > 0 && !isBotUserId(seat.userId)) {
           await this.wallet.credit(
             loaded.table.guildId,
             seat.userId,
