@@ -183,33 +183,12 @@ function buildBlackjackEmbed(
   return gameEmbed("Blackjack", description);
 }
 
+/**
+ * Start a blackjack hand. Callers that already hold `casinoLock` for this user
+ * should invoke this directly — the lock is not reentrant.
+ * `/blackjack` acquires the lock in `handleBlackjack`.
+ */
 export async function runBlackjackWithWager(
-  interaction: ChatInputCommandInteraction | ModalSubmitInteraction | ButtonInteraction,
-  wallet: WalletService,
-  blackjack: BlackjackSessionService,
-  config: Config,
-  amount: number,
-  options?: {
-    publishMode?: "interaction" | "channel";
-    hilo?: HiloSessionService;
-    mines?: MinesSessionService;
-  },
-) {
-  const guildId = assertGuild(interaction);
-
-  return casinoLock.run(guildId, interaction.user.id, async () => {
-    return runBlackjackWithWagerInner(
-      interaction,
-      wallet,
-      blackjack,
-      config,
-      amount,
-      options,
-    );
-  });
-}
-
-async function runBlackjackWithWagerInner(
   interaction: ChatInputCommandInteraction | ModalSubmitInteraction | ButtonInteraction,
   wallet: WalletService,
   blackjack: BlackjackSessionService,
@@ -431,11 +410,14 @@ export async function handleBlackjack(
   config: Config,
 ) {
   const amount = interaction.options.getInteger("amount", true);
+  const guildId = assertGuild(interaction);
 
   try {
-    await runBlackjackWithWager(interaction, wallet, blackjack, config, amount, {
-      hilo,
-      mines,
+    await casinoLock.run(guildId, interaction.user.id, async () => {
+      await runBlackjackWithWager(interaction, wallet, blackjack, config, amount, {
+        hilo,
+        mines,
+      });
     });
   } catch (err) {
     if (err instanceof ActiveCasinoSessionError) {

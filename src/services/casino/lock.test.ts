@@ -28,4 +28,11 @@ describe("casino lock", () => {
       lock.run("g1", "u2", async () => 2),
     ]).then((values) => expect(values).toEqual([1, 2]));
   });
+
+  test("nested run for same user throws (not reentrant)", async () => {
+    const lock = new CasinoLockService();
+    await expect(
+      lock.run("g1", "u1", async () => lock.run("g1", "u1", async () => 1)),
+    ).rejects.toBeInstanceOf(CasinoBusyError);
+  });
 });
